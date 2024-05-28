@@ -30,6 +30,7 @@ class LoRA(nn.Module):
         self.composition_mode = config.composition_mode
         self.attn_matrices = config.attn_matrices
         self.use_gating = config.use_gating
+        
         # Optional dropout
         if config.dropout > 0.0:
             self.lora_dropout = nn.Dropout(p=config.dropout)
@@ -44,6 +45,7 @@ class LoRA(nn.Module):
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
             self.scaling = self.lora_alpha / self.r
+            self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
 
             if self.use_gating:
                 self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
@@ -55,6 +57,7 @@ class LoRA(nn.Module):
                 nn.init.zeros_(self.lora_B)
                 if self.use_gating:
                     nn.init.normal_(self.gate.weight, std=0.02)
+                
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
@@ -250,7 +253,9 @@ class Linear(LoRALayer, nn.Linear):
                         if lora.composition_mode == "scale":
                             delta_w = lora.lora_B.view(1, 1, -1)
                         else:
-                            delta_w = lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B)
+                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                            delta_w = delta_w * lora.m
                         if lora.use_gating:
                             gate = torch.sigmoid(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
