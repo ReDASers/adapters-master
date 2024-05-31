@@ -404,7 +404,7 @@ class MergedLinear(LoRALayer, nn.Linear):
             adapter_setup = self.get_active_setup(self.loras)
             if adapter_setup is not None:
                 if len(adapter_setup) == 1:
-                    result = F.linear(x, T(self.weight), bias=self.bias)
+                    result = F.linear(x, T(self.weight), bias=None)
                     lora = self.loras[adapter_setup[0]]
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
@@ -430,4 +430,4 @@ class MergedLinear(LoRALayer, nn.Linear):
                 else:
                     raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with LoRA.")
 
-        return F.linear(x, T(self.weight), bias=self.bias)
+        return F.linear(x, T(self.weight), bias=None)
