@@ -435,8 +435,8 @@ class LoRAConfig(AdapterConfigBase):
     output_lora: bool = False
 
     r: int = 8
-    alpha: int = 8
-    dropout: float = 0.0
+    alpha: int = 16
+    dropout: float = 0.05
     attn_matrices: List[str] = field(default_factory=lambda: ["q", "v"])
     composition_mode: str = "add"
     init_weights: str = "lora"

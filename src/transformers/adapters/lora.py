@@ -248,12 +248,12 @@ class Linear(LoRALayer, nn.Linear):
                 if len(adapter_setup) == 1:
                     lora = self.loras[adapter_setup[0]]
                     # result shape: <batch_size> x <seq_len> x <head_dim>
-                    result = F.linear(x, T(self.weight), bias=self.bias)
+                    result = F.linear(x, T(self.weight))
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
                             delta_w = lora.lora_B.view(1, 1, -1)
                         else:
-                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            delta_w = lora.scaling * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                             delta_w = delta_w * lora.m
                         if lora.use_gating:
@@ -267,7 +267,7 @@ class Linear(LoRALayer, nn.Linear):
                 else:
                     raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with LoRA.")
 
-        return F.linear(x, T(self.weight), bias=self.bias)
+        return F.linear(x, T(self.weight), bias=None)
 
 
 class MergedLinear(LoRALayer, nn.Linear):
