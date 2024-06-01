@@ -44,7 +44,7 @@ class LoRA(nn.Module):
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
-            self.scaling = self.lora_alpha / self.r
+            self.scaling = self.lora_alpha / math.sqrt(self.r)
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
 
             if self.use_gating:
@@ -267,7 +267,7 @@ class Linear(LoRALayer, nn.Linear):
                 else:
                     raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with LoRA.")
 
-        return F.linear(x, T(self.weight), bias=None)
+        return F.linear(x, T(self.weight), bias=self.bias)
 
 
 class MergedLinear(LoRALayer, nn.Linear):
@@ -404,7 +404,7 @@ class MergedLinear(LoRALayer, nn.Linear):
             adapter_setup = self.get_active_setup(self.loras)
             if adapter_setup is not None:
                 if len(adapter_setup) == 1:
-                    result = F.linear(x, T(self.weight), bias=None)
+                    result = F.linear(x, T(self.weight), bias=self.bias)
                     lora = self.loras[adapter_setup[0]]
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
@@ -430,4 +430,4 @@ class MergedLinear(LoRALayer, nn.Linear):
                 else:
                     raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with LoRA.")
 
-        return F.linear(x, T(self.weight), bias=None)
+        return F.linear(x, T(self.weight), bias=self.bias)
