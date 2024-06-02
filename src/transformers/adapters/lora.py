@@ -44,7 +44,7 @@ class LoRA(nn.Module):
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
-            self.scaling = self.lora_alpha / math.sqrt(self.r)
+            self.scaling = self.lora_alpha 
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
 
             if self.use_gating:
@@ -253,7 +253,7 @@ class Linear(LoRALayer, nn.Linear):
                         if lora.composition_mode == "scale":
                             delta_w = lora.lora_B.view(1, 1, -1)
                         else:
-                            delta_w = lora.scaling * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                             delta_w = delta_w * lora.m
                         if lora.use_gating:
