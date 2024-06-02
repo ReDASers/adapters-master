@@ -334,7 +334,7 @@ class PrefixTuningShim(AdapterLayerBase, nn.Module):
 
         if adapter_name in self.prefix_gates:
             gate = self.prefix_gates[adapter_name]
-            gate_output = torch.mean(torch.sigmoid(gate(residual_input)), dim=1)
+            gate_output = torch.mean(1 + torch.tanh(gate(residual_input)), dim=1)
             self._store_gating_score(adapter_name, gate_output)
             gate_output_key = gate_output[:, 0].view(-1, 1, 1, 1)
             gate_output_value = gate_output[:, -1].view(-1, 1, 1, 1)
