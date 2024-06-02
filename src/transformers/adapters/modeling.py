@@ -7,7 +7,6 @@ from transformers.activations import get_activation
 
 from .configuration import AdapterConfig, AdapterFusionConfig
 from .context import ForwardContext
-from .layer import AdapterGate
 
 
 class Activation_Function_Class(nn.Module):
