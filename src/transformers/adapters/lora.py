@@ -257,7 +257,7 @@ class Linear(LoRALayer, nn.Linear):
                             delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                             delta_w = delta_w * lora.m
                         if lora.use_gating:
-                            gate = torch.sigmoid(lora.gate(x))
+                            gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
                             self._store_gating_score(adapter_setup[0], gate)
                         else:
