@@ -378,9 +378,6 @@ class MergedLinear(LoRALayer, nn.Linear):
                     lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
                 ).squeeze(0)
                 
-                delta_w = lora.lora_alpha * delta_w
-                delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                delta_w = delta_w * lora.m
             # shape after transpose: <head_dim> x <head_dim * n_heads>
             delta_w = delta_w.transpose(-2, -1)
             weight = lora.com(weight, T(self.pad(delta_w, lora)))
