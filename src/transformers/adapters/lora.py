@@ -207,9 +207,6 @@ class Linear(LoRALayer, nn.Linear):
                     delta_w = T(lora.lora_B)
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
-                    delta_w = lora.lora_alpha * delta_w
-                    delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                    delta_w = delta_w * lora.m
                 self.weight.data = lora.com_inv(self.weight.data, delta_w)
             self.merged = None
 
@@ -224,9 +221,6 @@ class Linear(LoRALayer, nn.Linear):
                 delta_w = T(lora.lora_B)
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
-                delta_w = lora.lora_alpha * delta_w
-                delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                delta_w = delta_w * lora.m
             weight = lora.com(weight, delta_w, scaling=scaling)
 
         return weight
@@ -366,10 +360,6 @@ class MergedLinear(LoRALayer, nn.Linear):
                     delta_w = F.conv1d(
                         lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
                     ).squeeze(0)
-
-                    delta_w = lora.lora_alpha * delta_w
-                    delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                    delta_w = delta_w * lora.m
                 # shape after transpose: <head_dim> x <head_dim * n_heads>
                 delta_w = delta_w.transpose(-2, -1)
                 self.weight.data = lora.com_inv(self.weight.data, T(self.pad(delta_w, lora)))
