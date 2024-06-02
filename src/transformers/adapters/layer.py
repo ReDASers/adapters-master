@@ -11,6 +11,15 @@ from .context import AdapterSetup, ForwardContext
 from .modeling import Adapter, BertFusion, ParallelAdapter
 
 
+class AdapterGate(nn.Module):
+    def __init__(self, in_size):
+        super().__init__()
+        self.linear1 = nn.Linear(in_size, in_size)
+        self.linear2 = nn.Linear(in_size, in_size)
+    
+    def forward(self, X):
+        return self.linear1(X) * self.linear2(X).sigmoid()
+    
 class AdapterLayerBase(ABC):
     """
     Base class for all adaptation methods that require per-layer modules.

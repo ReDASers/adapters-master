@@ -7,6 +7,7 @@ from transformers.activations import get_activation
 
 from .configuration import AdapterConfig, AdapterFusionConfig
 from .context import ForwardContext
+from .layer import AdapterGate
 
 
 class Activation_Function_Class(nn.Module):
@@ -272,9 +273,8 @@ class ParallelAdapter(Adapter):
 
         if self.use_gating:
             # x.shape = (batch_size, seq_len, hidden_size)
-            gate = torch.tanh(self.gate(x))
+            gate = torch.sigmoid(self.gate(x))
             gate = torch.mean(gate, dim=1).unsqueeze(-1)
-            gate = (gate + 1.0) / 2.0
             output = output * gate
 
         # apply layer norm if available
