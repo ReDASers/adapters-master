@@ -416,7 +416,7 @@ class MergedLinear(LoRALayer, nn.Linear):
                             ).transpose(-2, -1)
                             delta_w = after_B
                         if lora.use_gating:
-                            gate = torch.sigmoid(lora.gate(x))
+                            gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1)
                             self._store_gating_score(adapter_setup[0], gate)
                             gate = self.pad(
