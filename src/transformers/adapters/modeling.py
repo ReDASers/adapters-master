@@ -272,7 +272,7 @@ class ParallelAdapter(Adapter):
 
         if self.use_gating:
             # x.shape = (batch_size, seq_len, hidden_size)
-            gate = 1 + torch.tanh(self.gate(x))
+            gate = torch.sigmoid(self.gate(x))
             gate = torch.mean(gate, dim=1).unsqueeze(-1)
             output = output * gate
 
