@@ -106,7 +106,7 @@ class Adapter(nn.Module):
             self.adapter_norm_after = nn.LayerNorm(self.input_size)
 
         if self.use_gating:
-            self.gate = nn.GLU(self.input_size)# nn.Linear(self.input_size, 1)
+            self.gate = nn.Linear(self.input_size, 1)
 
         # if we want to initialize with the bert strategy then this function is called for all the linear layers
         if config["init_weights"] == "bert":
@@ -171,7 +171,7 @@ class Adapter(nn.Module):
         up = self.adapter_up(down)
         up = up * self.scaling
         output = up
-
+        
         if self.use_gating:
             # x.shape = (batch_size, seq_len, hidden_size)
             gate = torch.sigmoid(self.gate(x))
@@ -272,8 +272,9 @@ class ParallelAdapter(Adapter):
 
         if self.use_gating:
             # x.shape = (batch_size, seq_len, hidden_size)
-            gate = self.gate.forward(x)
+            gate = torch.tanh(self.gate(x))
             gate = torch.mean(gate, dim=1).unsqueeze(-1)
+            gate = (gate + 1.0) / 2.0
             output = output * gate
 
         # apply layer norm if available
