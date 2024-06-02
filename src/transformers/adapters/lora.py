@@ -44,7 +44,7 @@ class LoRA(nn.Module):
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
-            self.scaling = self.lora_alpha 
+            self.scaling = self.lora_alpha / math.sqrt(self.r)
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
 
             if self.use_gating:
@@ -248,7 +248,7 @@ class Linear(LoRALayer, nn.Linear):
                 if len(adapter_setup) == 1:
                     lora = self.loras[adapter_setup[0]]
                     # result shape: <batch_size> x <seq_len> x <head_dim>
-                    result = F.linear(x, T(self.weight))
+                    result = F.linear(x, T(self.weight), bias = self.bias)
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
                             delta_w = lora.lora_B.view(1, 1, -1)
@@ -377,6 +377,10 @@ class MergedLinear(LoRALayer, nn.Linear):
                 delta_w = F.conv1d(
                     lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
                 ).squeeze(0)
+                
+                delta_w = lora.lora_alpha * delta_w
+                delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                delta_w = delta_w * lora.m
             # shape after transpose: <head_dim> x <head_dim * n_heads>
             delta_w = delta_w.transpose(-2, -1)
             weight = lora.com(weight, T(self.pad(delta_w, lora)))
@@ -414,7 +418,9 @@ class MergedLinear(LoRALayer, nn.Linear):
                             after_B = F.conv1d(
                                 after_A.transpose(-2, -1), lora.lora_B.unsqueeze(-1), groups=sum(lora.enable_lora)
                             ).transpose(-2, -1)
-                            delta_w = after_B
+                            delta_w = lora.lora_alpha * after_B
+                            delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                            delta_w = delta_w * lora.m
                         if lora.use_gating:
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1)
