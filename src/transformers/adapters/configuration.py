@@ -83,6 +83,8 @@ class AdapterConfigBase(Mapping):
         architecture = config_dict.get("architecture", None)
         if architecture == "prefix_tuning":
             cls_new = PrefixTuningConfig
+        elif architecture == "prompt_tuning":
+            cls_new = PromptTuningConfig
         elif architecture == "lora":
             cls_new = LoRAConfig
         elif architecture == "union":
@@ -395,6 +397,33 @@ class PrefixTuningConfig(AdapterConfigBase):
     dropout: float = 0.0
     use_gating: bool = False
     shared_gating: bool = True
+
+
+@dataclass(eq=False)
+class PromptTuningConfig(AdapterConfigBase):
+    """
+    The Prompt Tuning architecture proposed by Lester et al. (2021). See https://arxiv.org/pdf/2104.08691.pdf
+
+    Args:
+        prompt_length (int): The number of tokens in the prompt.
+            Defaults to 10.
+        prompt_init (str): The initialization method for the prompt. Can be either "random_uniform" or "from_string".
+            Defaults to "random_uniform".
+        prompt_init_text (str): The text to use for prompt initialization if prompt_init="from_string".
+        random_uniform_scale (float): The scale of the random uniform initialization if prompt_init="random_uniform".
+            Defaults to 0.5 as in the paper.
+        combine (str):
+            The method used to combine the prompt with the input. Can be either "prefix" or "prefix_after_bos".
+            Defaults to "prefix".
+"""
+
+    architecture: str = "prompt_tuning"
+
+    prompt_length: int = 10
+    prompt_init: str = "random_uniform"
+    prompt_init_text: Optional[str] = None
+    random_uniform_scale = 0.5
+    combine: str = "prefix"
 
 
 @dataclass(eq=False)

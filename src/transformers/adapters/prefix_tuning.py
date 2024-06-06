@@ -685,3 +685,5 @@ class PrefixTuningShim(AdapterLayerBase, nn.Module):
                 raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with prefix tuning.")
 
         return key_states, value_states, attention_mask
+
+

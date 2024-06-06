@@ -56,6 +56,7 @@ _import_structure = {
         "PfeifferConfig",
         "PfeifferInvConfig",
         "PrefixTuningConfig",
+        "PromptTuningConfig",
         "StaticAdapterFusionConfig",
         "UniPELTConfig",
     ],
@@ -180,6 +181,7 @@ if TYPE_CHECKING:
         PfeifferConfig,
         PfeifferInvConfig,
         PrefixTuningConfig,
+        PromptTuningConfig,
         StaticAdapterFusionConfig,
         UniPELTConfig,
     )
