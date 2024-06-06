@@ -220,7 +220,10 @@ class Linear(LoRALayer, nn.Linear):
             if lora.composition_mode == "scale":
                 delta_w = T(lora.lora_B)
             else:
+                weight = lora.lora_alpha * weight
                 delta_w = T(lora.lora_B @ lora.lora_A)
+                delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                delta_w = delta_w * lora.m
             weight = lora.com(weight, delta_w, scaling=scaling)
 
         return weight

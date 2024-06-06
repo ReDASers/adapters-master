@@ -1,7 +1,5 @@
-# https://github.com/google-research/prompt-tuning/blob/main/prompt_tuning/train/prompts.py
-
 import math
-from typing import Callable, Dict, List, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -36,6 +34,8 @@ class PromptTuning(nn.Module):
         prompt_tuning_config: PromptTuningConfig,
         model_config: PretrainedConfig,
         base_model_embeddings: nn.Module,
+        scaling: Union[float, str] = "learnable",
+        use_gating: bool = False,
     ):
         super().__init__()
 
@@ -63,6 +63,22 @@ class PromptTuning(nn.Module):
             raise ValueError(
                 f"Unknown combination function: {prompt_tuning_config.combine}. "
                 "Must be one of 'prefix' or 'prefix_after_bos'."
+            )
+
+        # Scaling parameter
+        if isinstance(scaling, float):
+            self.scaling = nn.Parameter(torch.tensor(scaling))
+        elif scaling == "learnable":
+            self.scaling = nn.Parameter(torch.ones(1))
+        else:
+            raise ValueError("Scaling parameter must be either a float or 'learnable'")
+
+        # Output gating mechanism
+        self.use_gating = use_gating
+        if self.use_gating:
+            self.output_gate = nn.Sequential(
+                nn.Linear(embedding_size, embedding_size),
+                nn.Sigmoid()
             )
 
     def _init_prompt_embedding(self, base_model_embeddings: nn.Module) -> None:
@@ -103,12 +119,21 @@ class PromptTuning(nn.Module):
         self.prompt_tokens = self.prompt_tokens.to(embedded_input.device)
         prompt = self.prompt_embedding(self.prompt_tokens)
 
+        # Apply scaling and ensure it is greater than 0
+        scaling_factor = torch.relu(self.scaling) + 1e-6
+        prompt = prompt * scaling_factor
+
         # Prompt to batch size
         batch_size = embedded_input.shape[0]
         prompt = torch.tile(torch.unsqueeze(prompt, dim=0), [batch_size] + [1 for _ in prompt.shape])
 
         # Merge prompt and input
         output = self.combination_fn(prompt, embedded_input)
+
+        # Apply output gating if enabled
+        if self.use_gating:
+            gate = self.output_gate(output)
+            output = gate * output
 
         # Adapt attention mask
         prefix_attention_mask_length = self.prompt_tuning_config.prompt_length
@@ -155,6 +180,8 @@ class PromptTuningLayer(AdapterLayerBase, nn.Module):
                 prompt_tuning_config=prompt_tuning_config,  # type: ignore
                 model_config=self.model_config,
                 base_model_embeddings=self.base_model_embeddings,
+                scaling=prompt_tuning_config.scaling,
+                use_gating=prompt_tuning_config.use_gating,
             )
             adapter.train(self.training)  # make sure training mode is consistent
             self.prompt_tunings[adapter_name] = adapter
@@ -218,7 +245,7 @@ class PromptTuningLayer(AdapterLayerBase, nn.Module):
         adapter_setup = self.get_active_setup()
         if adapter_setup is not None and len(adapter_setup) > 0:
             first_adapter = adapter_setup.first()
-            if first_adapter in self.prompt_tunings:
+            if (first_adapter is not None) and (first_adapter in self.prompt_tunings):
                 hidden_states, prefix_attention_mask_length = self.prompt_tunings[first_adapter](hidden_states)
 
         context = ForwardContext.get_context()
