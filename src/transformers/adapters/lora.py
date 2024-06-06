@@ -1,8 +1,3 @@
-# Code adapted from https://github.com/microsoft/LoRA/blob/main/loralib/layers.py.
-#  ------------------------------------------------------------------------------------------
-#  Copyright (c) Microsoft Corporation. All rights reserved.
-#  Licensed under the MIT License (MIT). See LICENSE in the repo root for license information.
-#  ------------------------------------------------------------------------------------------
 import math
 from typing import List, Union
 
@@ -30,7 +25,7 @@ class LoRA(nn.Module):
         self.composition_mode = config.composition_mode
         self.attn_matrices = config.attn_matrices
         self.use_gating = config.use_gating
-        
+
         # Optional dropout
         if config.dropout > 0.0:
             self.lora_dropout = nn.Dropout(p=config.dropout)
@@ -57,7 +52,7 @@ class LoRA(nn.Module):
                 nn.init.zeros_(self.lora_B)
                 if self.use_gating:
                     nn.init.normal_(self.gate.weight, std=0.02)
-                
+
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
@@ -220,7 +215,6 @@ class Linear(LoRALayer, nn.Linear):
             if lora.composition_mode == "scale":
                 delta_w = T(lora.lora_B)
             else:
-                weight = lora.lora_alpha * weight
                 delta_w = T(lora.lora_B @ lora.lora_A)
                 delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                 delta_w = delta_w * lora.m
@@ -251,7 +245,7 @@ class Linear(LoRALayer, nn.Linear):
                 if len(adapter_setup) == 1:
                     lora = self.loras[adapter_setup[0]]
                     # result shape: <batch_size> x <seq_len> x <head_dim>
-                    result = F.linear(x, T(self.weight), bias = self.bias)
+                    result = F.linear(x, T(self.weight), bias=self.bias)
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
                             delta_w = lora.lora_B.view(1, 1, -1)
@@ -275,7 +269,7 @@ class Linear(LoRALayer, nn.Linear):
 
 class MergedLinear(LoRALayer, nn.Linear):
     """
-    LoRA implementation for merged attention layer layer.
+    LoRA implementation for merged attention layer.
 
     Args:
         fan_in_fan_out (bool, optional):
@@ -317,7 +311,7 @@ class MergedLinear(LoRALayer, nn.Linear):
     def add_adapter(self, adapter_name: str, layer_idx: int) -> bool:
         is_added = super().add_adapter(adapter_name, layer_idx)
         if is_added:
-            lora_config = lora_config = self.config.adapters.match(
+            lora_config = self.config.adapters.match(
                 adapter_name,
                 config_type=LoRAConfig,
                 layer_idx=self.layer_idx,
@@ -380,7 +374,7 @@ class MergedLinear(LoRALayer, nn.Linear):
                 delta_w = F.conv1d(
                     lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
                 ).squeeze(0)
-                
+
             # shape after transpose: <head_dim> x <head_dim * n_heads>
             delta_w = delta_w.transpose(-2, -1)
             weight = lora.com(weight, T(self.pad(delta_w, lora)))
