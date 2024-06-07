@@ -77,10 +77,7 @@ class PromptTuning(nn.Module):
 
         # Output gating mechanism
         if self.use_gating:
-            self.output_gate = nn.Sequential(
-                nn.Linear(embedding_size, embedding_size),
-                nn.Sigmoid()
-            )
+            self.gate = nn.Linear(embedding_size, 1)
 
     def _init_prompt_embedding(self, base_model_embeddings: nn.Module) -> None:
         if self.prompt_tuning_config.prompt_init == "random_uniform":
@@ -133,8 +130,10 @@ class PromptTuning(nn.Module):
 
         # Apply output gating if enabled
         if self.use_gating:
-            gate = self.output_gate(output)
-            output = gate * output
+            gate = torch.sigmoid(self.gate(output))
+            gate = torch.mean(gate, dim=1).unsqueeze(-1)
+            output = output * gate
+            
 
         # Adapt attention mask
         prefix_attention_mask_length = self.prompt_tuning_config.prompt_length
