@@ -66,13 +66,14 @@ class PromptTuning(nn.Module):
 
         # Scaling parameter
         if isinstance(prompt_tuning_config.scaling, float):
-            self.scaling = torch.tensor(prompt_tuning_config.scaling)
-        elif prompt_tuning_config.scaling is None:
-            self.scaling = torch.ones(1)
+            if prompt_tuning_config.scaling > 0.0:
+                self.scaling = prompt_tuning_config.scaling
+            else:
+                raise ValueError("Scaling parameter must be greater than 0.")
         elif prompt_tuning_config.scaling == "learnable":
             self.scaling = nn.Parameter(torch.ones(1))
         else:
-            raise ValueError("Scaling parameter must be either a float or 'learnable' or None.")
+            raise ValueError("Scaling parameter must be either a float or 'learnable'.")
 
         # Output gating mechanism
         if self.use_gating:
