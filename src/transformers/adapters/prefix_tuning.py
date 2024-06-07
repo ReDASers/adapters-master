@@ -26,6 +26,9 @@ class PrefixTuning(nn.Module, ModuleUtilsMixin):
         self.input_size = input_size
         self.n_embd_per_head = self.input_size // self.n_heads
         self.config = config
+        self.dynamic_length = self.config.dynamic_length
+        self.max_prefix_length = self.config.max_prefix_length
+        self.complexity_threshold = self.config.complexity_threshold
 
         self.wte = nn.Embedding(self.config.prefix_length, self.input_size)
         self.control_trans = nn.Sequential(
@@ -34,6 +37,20 @@ class PrefixTuning(nn.Module, ModuleUtilsMixin):
             nn.Linear(self.config.bottleneck_size, self.n_layers * 2 * self.input_size),
         )
         self.dropout = nn.Dropout(self.config.dropout)
+
+    def adjust_prefix_length(self, input_tensor):
+        if not self.dynamic_length:
+            return self.prefix_length
+
+        complexity = self.compute_complexity(input_tensor)
+        adjusted_length = int(complexity * self.max_prefix_length)
+        return max(1, adjusted_length)  # Ensure at least one prefix token
+
+    def compute_complexity(self, input_tensor):
+        # Example complexity computation: normalized sentence length
+        sentence_lengths = input_tensor.sum(dim=1).float()
+        max_length = sentence_lengths.max()
+        return (sentence_lengths / max_length).mean().item()
 
     def eject(self):
         input_tokens = torch.arange(self.config.prefix_length).long()
@@ -48,7 +65,9 @@ class PrefixTuning(nn.Module, ModuleUtilsMixin):
 
     def forward(self, batch_size):
         input_tokens = torch.arange(self.config.prefix_length).long()
+
         input_tokens = input_tokens.unsqueeze(0).expand(batch_size, -1).to(self.device)
+
         embs = self.wte(input_tokens)
         key_values = self.control_trans(embs)  # batch_size x prefix_length x n_layers*2*input_size
         key_values = key_values.view(
@@ -57,7 +76,7 @@ class PrefixTuning(nn.Module, ModuleUtilsMixin):
         key_values = self.dropout(key_values)
         # n_layers * (2 x batch_size x n_heads x prefix_length x n_embd_per_head)
         key_values = key_values.permute(2, 0, 3, 1, 4).split(2)
-
+        self.config.prefix_length = self.adjust_prefix_length(key_values)
         return key_values
 
 

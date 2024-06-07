@@ -397,6 +397,10 @@ class PrefixTuningConfig(AdapterConfigBase):
     dropout: float = 0.0
     use_gating: bool = False
     shared_gating: bool = True
+    dynamic_length: bool = False 
+    max_prefix_length: int = 30
+    complexity_threshold: float = 0.5
+           
 
 
 @dataclass(eq=False)
