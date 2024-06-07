@@ -424,6 +424,8 @@ class PromptTuningConfig(AdapterConfigBase):
     prompt_init_text: Optional[str] = None
     random_uniform_scale = 0.5
     combine: str = "prefix"
+    scaling: Union[float, str] = "learnable",
+    use_gating: bool = False,
 
 
 @dataclass(eq=False)

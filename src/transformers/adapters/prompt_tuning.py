@@ -34,14 +34,13 @@ class PromptTuning(nn.Module):
         prompt_tuning_config: PromptTuningConfig,
         model_config: PretrainedConfig,
         base_model_embeddings: nn.Module,
-        scaling: Union[float, str] = "learnable",
-        use_gating: bool = False,
     ):
         super().__init__()
 
         self.name = adapter_name
         self.model_config = model_config
         self.prompt_tuning_config = prompt_tuning_config
+        self.use_gating = prompt_tuning_config.use_gating
 
         embedding_size = getattr(model_config, "embedding_size", model_config.hidden_size)
 
@@ -66,15 +65,16 @@ class PromptTuning(nn.Module):
             )
 
         # Scaling parameter
-        if isinstance(scaling, float):
-            self.scaling = nn.Parameter(torch.tensor(scaling))
-        elif scaling == "learnable":
+        if isinstance(prompt_tuning_config.scaling, float):
+            self.scaling = torch.tensor(prompt_tuning_config.scaling)
+        elif prompt_tuning_config.scaling is None:
+            self.scaling = torch.ones(1)
+        elif prompt_tuning_config.scaling == "learnable":
             self.scaling = nn.Parameter(torch.ones(1))
         else:
-            raise ValueError("Scaling parameter must be either a float or 'learnable'")
+            raise ValueError("Scaling parameter must be either a float or 'learnable' or None.")
 
         # Output gating mechanism
-        self.use_gating = use_gating
         if self.use_gating:
             self.output_gate = nn.Sequential(
                 nn.Linear(embedding_size, embedding_size),
