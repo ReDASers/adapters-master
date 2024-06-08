@@ -270,7 +270,7 @@ class PrefixTuningState(NamedTuple):
     idx_slice: Optional[slice] = None
 
 
-class PrefixTuningLayer(AdapterLayerBase, nn.Module):
+class PrefixTuningShim(AdapterLayerBase, nn.Module):
     """
     Representation of a Prefix Tuning layer within one Transformer layer. This class implements `AdapterLayerBase` for
     compatibility with adapters. It uses `PrefixTuningPool` in the background and `set_pool()` must be called after
