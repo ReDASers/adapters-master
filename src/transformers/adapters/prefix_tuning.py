@@ -39,18 +39,18 @@ class PrefixTuning(nn.Module, ModuleUtilsMixin):
         self.dropout = nn.Dropout(self.config.dropout)
 
     def adjust_prefix_length(self, input_tensor):
-        if not self.dynamic_length:
-            return self.prefix_length
+        if not self.config.dynamic_length:
+            return self.config.prefix_length
 
         complexity = self.compute_complexity(input_tensor)
-        adjusted_length = int(complexity * self.max_prefix_length)
+        adjusted_length = int(complexity * self.config.max_prefix_length)
         return max(1, adjusted_length)  # Ensure at least one prefix token
 
     def compute_complexity(self, input_tensor):
-        # Example complexity computation: normalized sentence length
-        sentence_lengths = input_tensor.sum(dim=1).float()
-        max_length = sentence_lengths.max()
-        return (sentence_lengths / max_length).mean().item()
+        # Example complexity computation considering special tokens (like [SEP] or [CLS])
+        token_lengths = (input_tensor != 0).sum(dim=1).float()  # Count non-padding tokens
+        max_length = token_lengths.max()
+        return (token_lengths / max_length).mean().item()
 
     def eject(self):
         input_tokens = torch.arange(self.config.prefix_length).long()
@@ -65,7 +65,8 @@ class PrefixTuning(nn.Module, ModuleUtilsMixin):
 
     def forward(self, batch_size):
         input_tokens = torch.arange(self.config.prefix_length).long()
-
+        self.config.prefix_length = self.adjust_prefix_length(input_tokens)
+        input_tokens = torch.arange(self.config.prefix_length).long()
         input_tokens = input_tokens.unsqueeze(0).expand(batch_size, -1).to(self.device)
 
         embs = self.wte(input_tokens)
