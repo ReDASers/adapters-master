@@ -1,17 +1,16 @@
-from typing import Dict, List, NamedTuple, Optional, Union
+from typing import List, Union
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from transformers import PretrainedConfig
-from transformers.modeling_utils import ModuleUtilsMixin
-
+from ..modeling_utils import ModuleUtilsMixin
 from .composition import AdapterCompositionBlock, BatchSplit, Parallel, Stack, adjust_tensors_for_parallel
-from .configuration import ModelAdaptersConfig, PrefixTuningConfig
+from .configuration import PrefixTuningConfig
 from .context import AdapterSetup, ForwardContext
-from .modeling import Activation_Function_Class
 from .layer import AdapterLayerBase
+from .modeling import Activation_Function_Class
+
 
 class PrefixTuning(nn.Module, ModuleUtilsMixin):
     def __init__(
@@ -20,20 +19,19 @@ class PrefixTuning(nn.Module, ModuleUtilsMixin):
         n_heads: int,
         input_size: int,
         config: PrefixTuningConfig,
-        n_embd_per_head: Optional[int] = None,
     ):
         super().__init__()
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.input_size = input_size
-        self.n_embd_per_head = n_embd_per_head or self.input_size // self.n_heads
+        self.n_embd_per_head = self.input_size // self.n_heads
         self.config = config
 
         self.wte = nn.Embedding(self.config.prefix_length, self.input_size)
         self.control_trans = nn.Sequential(
             nn.Linear(self.input_size, self.config.bottleneck_size),
             Activation_Function_Class(self.config.non_linearity.lower()),
-            nn.Linear(self.config.bottleneck_size, self.n_layers * 2 * self.n_heads * self.n_embd_per_head),
+            nn.Linear(self.config.bottleneck_size, self.n_layers * 2 * self.input_size),
         )
         self.dropout = nn.Dropout(self.config.dropout)
 
@@ -70,18 +68,15 @@ class FlatPrefixTuning(nn.Module, ModuleUtilsMixin):
         n_heads: int,
         input_size: int,
         config: PrefixTuningConfig,
-        n_embd_per_head: Optional[int] = None,
     ):
         super().__init__()
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.input_size = input_size
-        self.n_embd_per_head = n_embd_per_head or self.input_size // self.n_heads
+        self.n_embd_per_head = self.input_size // self.n_heads
         self.config = config
 
-        self.control_trans = nn.Parameter(
-            torch.randn(self.config.prefix_length * self.n_layers * 2 * self.n_heads * self.n_embd_per_head)
-        )
+        self.control_trans = nn.Parameter(torch.randn(self.config.prefix_length * self.n_layers * 2 * self.input_size))
 
         self.dropout = nn.Dropout(self.config.dropout)
 
@@ -129,7 +124,7 @@ class PrefixTuningPool(nn.Module):
 
     How it works:
 
-        1. A `PrefixTuningLayer` module that sets this module as pool module is added to each layer.
+        1. A `PrefixTuningShim` module that sets this module as pool module is added to each layer.
         2. On adding a prefix, each shim module where a prefix should be added increments a counter in `prefix_counts`.
         3. Finally, the base model class confirms adding a new prefix by calling `confirm_prefix()`.
         4. This module adds a prefix layer that produces outputs corresponding to the indicated number of layers.
@@ -138,16 +133,15 @@ class PrefixTuningPool(nn.Module):
 
         - The forward call to this layer is executed in the ForwardContext of each model pass.
         - All other methods of this class (except for `confirm_prefix()`) should be called exclusively by
-          `PrefixTuningLayer`.
+          `PrefixTuningShim`.
 
     Args:
         config (:class:`~transformers.PretrainedConfig`): The model config.
     """
 
-    def __init__(self, model_config: PretrainedConfig, adapters_config: ModelAdaptersConfig):
+    def __init__(self, config):
         super().__init__()
-        self.model_config = model_config
-        self.adapters_config = adapters_config
+        self.config = config
         self.prefix_counts = {}
         self.prefix_tunings = nn.ModuleDict()
 
@@ -162,11 +156,11 @@ class PrefixTuningPool(nn.Module):
 
         return self.prefix_counts[prefix_name][location_key]["count"] - 1
 
-    def confirm_prefix(self, prefix_name: str) -> bool:
+    def confirm_prefix(self, prefix_name: str):
         """Create Prefix Tuning module based on shim layer infications."""
-        prefix_tuning_config = self.adapters_config.match(prefix_name, PrefixTuningConfig)
+        prefix_tuning_config = self.config.adapters.match(prefix_name, PrefixTuningConfig)
         if prefix_tuning_config is None:
-            return False
+            return
 
         if prefix_name not in self.prefix_counts:
             raise ValueError(f"Prefix {prefix_name} not found in PrefixTuningPool")
@@ -177,31 +171,11 @@ class PrefixTuningPool(nn.Module):
                 "n_layers": location_config["count"],
                 "n_heads": location_config["n_heads"],
                 "input_size": location_config["input_size"],
-                "n_embd_per_head": location_config["n_embd_per_head"],
             }
         prefix_tuning = PrefixTuningGroup(module_configs, prefix_tuning_config)
         prefix_tuning.train(self.training)  # make sure training mode is consistent
         self.prefix_tunings[prefix_name] = prefix_tuning
         del self.prefix_counts[prefix_name]
-        return True
-
-    def average_prefix(self, prefix_name: str, input_adapters: Dict[str, float]) -> bool:
-        if self.confirm_prefix(prefix_name):
-            # average weights
-            avg_state_dict = {}
-            for name, weight in input_adapters.items():
-                module = self.prefix_tunings[name]
-                if module is not None:
-                    for k, v in module.state_dict().items():
-                        if k in avg_state_dict:
-                            avg_state_dict[k] += weight * v
-                        else:
-                            avg_state_dict[k] = weight * v
-            # load averaged weights
-            self.prefix_tunings[prefix_name].load_state_dict(avg_state_dict)
-            return True
-
-        return False
 
     def delete_prefix(self, prefix_name: str):
         if prefix_name in self.prefix_tunings:
@@ -223,7 +197,7 @@ class PrefixTuningPool(nn.Module):
         if context is not None:
             adapter_setup = context.adapter_setup
         else:
-            adapter_setup = self.adapters_config.active_setup
+            adapter_setup = self.config.adapters.active_setup
 
         prefix_states = {}
         if adapter_setup is not None:
@@ -248,28 +222,6 @@ class PrefixTuningPool(nn.Module):
         return prefix_states
 
 
-class PrefixTuningState(NamedTuple):
-    """
-    Models the input and output states of a prefix tuning layer.
-
-    Args:
-        key_states (torch.Tensor): The key states of the attention layer.
-        value_states (torch.Tensor): The value states of the attention layer.
-        residual_input (torch.Tensor): The residual input of the attention layer.
-        attention_mask (torch.Tensor, optional): The attention mask of the attention layer.
-        invert_mask (bool): Whether the attention mask is inverted (ie. using '1' for padding).
-        idx_slice (slice, optional): Id slice for slicing prefix states along the batch size dimension.
-
-    """
-
-    key_states: torch.Tensor
-    value_states: torch.Tensor
-    residual_input: torch.Tensor
-    attention_mask: Optional[torch.Tensor]
-    invert_mask: bool
-    idx_slice: Optional[slice] = None
-
-
 class PrefixTuningShim(AdapterLayerBase, nn.Module):
     """
     Representation of a Prefix Tuning layer within one Transformer layer. This class implements `AdapterLayerBase` for
@@ -282,36 +234,26 @@ class PrefixTuningShim(AdapterLayerBase, nn.Module):
         config (:class:`~transformers.PretrainedConfig`): The model config.
     """
 
-    adapter_modules_name = "prefixes"
-    supported_compositions = [Stack, Parallel, BatchSplit]
-
-    def __init__(
-        self,
-        location_key: str,
-        model_config: PretrainedConfig,
-        adapters_config: ModelAdaptersConfig,
-        add_model_type_to_key: bool = False,
-    ):
+    def __init__(self, location_key: str, config, add_model_type_to_key: bool = False):
         super().__init__()
-        self.model_config = model_config
-        self.adapters_config = adapters_config
+        self.config = config
         self.location_key = location_key
         if add_model_type_to_key:
-            self.location_key = f"{self.model_config.model_type}_{self.location_key}"
+            self.location_key = f"{self.config.model_type}_{self.location_key}"
         self.prefixes = {}
         self.prefix_gates = nn.ModuleDict()
 
     def set_pool(self, pool: PrefixTuningPool):
         self.__setattr__("pool", pool)
 
-    def add_adapter(self, adapter_name: str, layer_idx: int) -> bool:
+    def add_adapter(self, adapter_name: str, layer_idx: int):
         self.layer_idx = layer_idx
         # only match location keys for which we have config keys
         if self.location_key.startswith("cross") or self.location_key.startswith("encoder"):
             used_location_key = self.location_key
         else:
             used_location_key = None
-        prefix_tuning_config = self.adapters_config.match(
+        prefix_tuning_config = self.config.adapters.match(
             adapter_name,
             config_type=PrefixTuningConfig,
             layer_idx=self.layer_idx,
@@ -321,43 +263,16 @@ class PrefixTuningShim(AdapterLayerBase, nn.Module):
             prefix_id = self.pool.indicate_prefix(
                 adapter_name,
                 self.location_key,
-                n_heads=self.model_config.num_attention_heads,
-                input_size=self.model_config.hidden_size,
-                n_embd_per_head=getattr(self.model_config, "d_kv", None),  # this is currently specific to T5-3B
+                n_heads=self.config.num_attention_heads,
+                input_size=self.config.hidden_size,
             )
             self.prefixes[adapter_name] = prefix_id
 
             if prefix_tuning_config.use_gating:
                 gate_outputs = 1 if prefix_tuning_config.shared_gating else 2
-                gate = nn.Linear(self.model_config.hidden_size, gate_outputs)
+                gate = nn.Linear(self.config.hidden_size, gate_outputs)
                 gate.weight.data.normal_(mean=0.0, std=0.02)
                 self.prefix_gates[adapter_name] = gate
-            return True
-
-        return False
-
-    def average_adapter(self, adapter_name: str, input_adapters: Dict[str, float]) -> bool:
-        # add new adapter
-        if self.add_adapter(adapter_name, self.layer_idx):
-            # prefix averaging is handled in pool, only average gates here
-            if adapter_name in self.prefix_gates:
-                avg_state_dict = {}
-                for name, weight in input_adapters.items():
-                    if name in self.prefix_gates:
-                        module = self.prefix_gates[name]
-                        for k, v in module.state_dict().items():
-                            if k in avg_state_dict:
-                                avg_state_dict[k] += weight * v
-                            else:
-                                avg_state_dict[k] = weight * v
-                    else:
-                        self.delete_adapter(adapter_name)  # clean up before raising error
-                        raise ValueError("Adapter {} not found.".format(name))
-                # load averaged weights
-                self.prefix_gates[adapter_name].load_state_dict(avg_state_dict)
-            return True
-        else:
-            return False
 
     def delete_adapter(self, adapter_name: str):
         self.pool.delete_prefix(adapter_name)
@@ -380,15 +295,6 @@ class PrefixTuningShim(AdapterLayerBase, nn.Module):
                     for param in self.prefix_gates[prefix_tuning_name].parameters():
                         param.requires_grad = unfreeze_adapters
 
-    def freeze_adapter(self, adapter_name: str, freeze: bool = True):
-        if adapter_name in self.prefixes:
-            self.pool.get_prefix(adapter_name)[self.location_key].train(not freeze)
-            for param in self.pool.get_prefix(adapter_name)[self.location_key].parameters():
-                param.requires_grad = not freeze
-            if adapter_name in self.prefix_gates:
-                for param in self.prefix_gates[adapter_name].parameters():
-                    param.requires_grad = not freeze
-
     def get_adapter(self, adapter_name):
         return_dict = nn.ModuleDict()
         # Make sure to only return params once
@@ -403,36 +309,68 @@ class PrefixTuningShim(AdapterLayerBase, nn.Module):
 
         return None
 
-    def vslice(self, state: PrefixTuningState, slice_obj: slice) -> PrefixTuningState:
-        if state.idx_slice is None:
-            split_idx_slice = slice_obj
-        else:
-            split_idx_slice = slice(
-                state.idx_slice.start + slice_obj.start,
-                state.idx_slice.start + slice_obj.stop,
-            )
-        return PrefixTuningState(
-            key_states=state.key_states[slice_obj],
-            value_states=state.value_states[slice_obj],
-            residual_input=state.residual_input[slice_obj],
-            attention_mask=state.attention_mask[slice_obj] if state.attention_mask is not None else None,
-            invert_mask=state.invert_mask,
-            idx_slice=split_idx_slice,
-        )
+    def single_forward(
+        self,
+        adapter_name: str,
+        key_states,
+        value_states,
+        residual_input,
+        attention_mask=None,
+        invert_mask=True,
+        idx_range=None,
+    ):
+        prefix_id = self.prefixes[adapter_name]
+        batch_size = key_states.size(0)
 
-    def pad_and_concat(self, states: List[PrefixTuningState]) -> PrefixTuningState:
-        """Pads all key & value states to the longest prefix length in the current batch.
+        # Retrieve pre-computed prefix states from context
+        context = ForwardContext.get_context()
+        # batch_size x n_heads x prefix_length x n_embd_per_head
+        prefix_keys, prefix_values = context.prefix_states[adapter_name][self.location_key][prefix_id]
+
+        # select index range for batch split
+        if idx_range is not None:
+            prefix_keys = prefix_keys[idx_range]
+            prefix_values = prefix_values[idx_range]
+
+        if adapter_name in self.prefix_gates:
+            gate = self.prefix_gates[adapter_name]
+            gate_output = torch.mean(torch.sigmoid(gate(residual_input)), dim=1)
+            self._store_gating_score(adapter_name, gate_output)
+            gate_output_key = gate_output[:, 0].view(-1, 1, 1, 1)
+            gate_output_value = gate_output[:, -1].view(-1, 1, 1, 1)
+            prefix_keys = prefix_keys * gate_output_key
+            prefix_values = prefix_values * gate_output_value
+
+        # replicate for Parallel block
+        prefix_keys, prefix_values = adjust_tensors_for_parallel(key_states, prefix_keys, prefix_values)
+
+        key_states = torch.cat([prefix_keys, key_states], dim=2)
+        value_states = torch.cat([prefix_values, value_states], dim=2)
+        if attention_mask is not None:
+            if attention_mask.dim() == 2:  # e.g. for DistilBERT, attention_mask has shape (batch_size, seq_len)
+                prefix_mask = torch.ones(batch_size, prefix_keys.size(2)).to(attention_mask.device)
+            else:
+                prefix_mask = torch.ones(batch_size, 1, attention_mask.size(2), prefix_keys.size(2)).to(
+                    attention_mask.device
+                )
+            if invert_mask:
+                prefix_mask = 1.0 - prefix_mask
+            (prefix_mask,) = adjust_tensors_for_parallel(attention_mask, prefix_mask)
+            attention_mask = torch.cat([prefix_mask, attention_mask], dim=-1)
+
+        return key_states, value_states, residual_input, attention_mask
+
+    def _pad_and_concat(self, max_prefix_length, outputs, invert_mask=True):
+        """Pads all key & value states to the lFongest prefix length in the current batch.
         This is required e.g. for stacked prefix tunings.
         """
-        max_prefix_length = max([state.key_states.shape[-2] for state in states])
         all_key_states, all_value_states, all_residual_input, all_attention_mask = [], [], [], []
-        for state in states:
-            key_states, value_states, residual_input, attention_mask = state[:4]
+        for key_states, value_states, residual_input, attention_mask in outputs:
             # pad sizes
             pad_length = max_prefix_length - key_states.shape[-2]
             pad_size = (0, 0, pad_length, 0)
-            key_states = F.pad(key_states, pad_size, "constant", self.model_config.pad_token_id)
-            value_states = F.pad(value_states, pad_size, "constant", self.model_config.pad_token_id)
+            key_states = F.pad(key_states, pad_size, "constant", self.config.pad_token_id)
+            value_states = F.pad(value_states, pad_size, "constant", self.config.pad_token_id)
 
             # pad attention mask
             if pad_length > 0:
@@ -443,7 +381,7 @@ class PrefixTuningShim(AdapterLayerBase, nn.Module):
                     attention_mask,
                     (max_prefix_length - attention_mask.shape[-1], 0),
                     "constant",
-                    1.0 if state.invert_mask else 0.0,
+                    1.0 if invert_mask else 0.0,
                 )
 
             all_key_states.append(key_states)
@@ -456,89 +394,294 @@ class PrefixTuningShim(AdapterLayerBase, nn.Module):
         all_residual_input = torch.cat(all_residual_input, dim=0)
         all_attention_mask = torch.cat(all_attention_mask, dim=0) if attention_mask is not None else None
 
-        return PrefixTuningState(
-            key_states=all_key_states,
-            value_states=all_value_states,
-            residual_input=all_residual_input,
-            attention_mask=all_attention_mask,
-            invert_mask=states[0].invert_mask,
-            idx_slice=states[0].idx_slice,
-        )
+        return all_key_states, all_value_states, all_residual_input, all_attention_mask
 
-    def repeat(self, state: PrefixTuningState, channels: int) -> PrefixTuningState:
-        if state.attention_mask is not None:
-            if state.attention_mask.dim() == 2:  # e.g. for DistilBERT, attention_mask has shape (batch_size, seq_len)
-                attention_mask = state.attention_mask.repeat(channels, 1)
+    def adapter_stack(
+        self,
+        adapter_setup: Stack,
+        key_states,
+        value_states,
+        residual_input,
+        attention_mask=None,
+        invert_mask=True,
+        idx_range=None,
+        lvl=0,
+    ):
+        for adapter_stack_layer in adapter_setup:
+            # Break if setup is too deep
+            if isinstance(adapter_stack_layer, AdapterCompositionBlock) and lvl >= 1:
+                raise ValueError(
+                    "Specified adapter setup is too deep. Cannot have {} at level {}".format(
+                        adapter_stack_layer.__class__.__name__, lvl
+                    )
+                )
+            # We have a nested parallel layer -> call parallel method
+            elif isinstance(adapter_stack_layer, Parallel):
+                key_states, value_states, residual_input, attention_mask = self.adapter_parallel(
+                    adapter_stack_layer,
+                    key_states,
+                    value_states,
+                    residual_input,
+                    attention_mask,
+                    invert_mask=invert_mask,
+                    idx_range=idx_range,
+                    lvl=lvl + 1,
+                )
+            # We have a nested batch split block -> call batchsplit method
+            elif isinstance(adapter_stack_layer, BatchSplit):
+                key_states, value_states, residual_input, attention_mask = self.adapter_batchsplit(
+                    adapter_stack_layer,
+                    key_states,
+                    value_states,
+                    residual_input,
+                    attention_mask,
+                    invert_mask=invert_mask,
+                    idx_range=idx_range,
+                    lvl=lvl + 1,
+                )
+            # We have a single prefix tuning module part of this model -> forward pass
+            elif adapter_stack_layer in self.prefixes:
+                key_states, value_states, _, attention_mask = self.single_forward(
+                    adapter_stack_layer,
+                    key_states,
+                    value_states,
+                    residual_input,
+                    attention_mask,
+                    invert_mask,
+                    idx_range=idx_range,
+                )
+            # Nesting other composition blocks is invalid
+            elif isinstance(adapter_stack_layer, AdapterCompositionBlock):
+                raise ValueError(
+                    "Invalid adapter setup. Cannot nest {} in {}".format(
+                        adapter_stack_layer.__class__.__name__, adapter_setup.__class__.__name__
+                    )
+                )
+            # As all prefix tuning modules are centrally stored, fail if not found.
             else:
-                attention_mask = state.attention_mask.repeat(channels, 1, 1, 1)
-        else:
-            attention_mask = None
-        return PrefixTuningState(
-            key_states=state.key_states.repeat(channels, 1, 1, 1),
-            value_states=state.value_states.repeat(channels, 1, 1, 1),
-            residual_input=state.residual_input.repeat(channels, 1, 1),
-            attention_mask=attention_mask,
-            invert_mask=state.invert_mask,
-            idx_slice=state.idx_slice,
-        )
+                raise ValueError(f"Unknown prefix tuning name '{adapter_stack_layer}'.")
 
-    def mean(self, states: List[PrefixTuningState], weights: torch.Tensor) -> PrefixTuningState:
-        # TODO implement average composition
-        raise NotImplementedError()
+        return key_states, value_states, residual_input, attention_mask
 
-    def compose_single(self, adapter_setup: str, state: PrefixTuningState, lvl: int = 0) -> PrefixTuningState:
-        prefix_id = self.prefixes[adapter_setup]
-        batch_size = state.key_states.size(0)
+    def adapter_parallel(
+        self,
+        adapter_setup: Parallel,
+        key_states,
+        value_states,
+        residual_input,
+        attention_mask=None,
+        invert_mask=True,
+        idx_range=None,
+        lvl=0,
+    ):
+        """
+        For parallel execution of the adapters on the same input. This means that the input is repeated N times before
+        feeding it to the adapters (where N is the number of adapters).
+        """
 
-        # Retrieve pre-computed prefix states from context
         context = ForwardContext.get_context()
-        # batch_size x n_heads x prefix_length x n_embd_per_head
-        prefix_keys, prefix_values = context.prefix_states[adapter_setup][self.location_key][prefix_id]
+        if not context.adapters_parallelized:
+            orig_batch_size = residual_input.shape[0]
+            residual_input = residual_input.repeat(self.config.adapters.active_setup.parallel_channels, 1, 1, 1)
+            key_states = key_states.repeat(self.config.adapters.active_setup.parallel_channels, 1, 1, 1)
+            value_states = value_states.repeat(self.config.adapters.active_setup.parallel_channels, 1, 1, 1)
+            if attention_mask is not None:
+                if attention_mask.dim() == 2:  # e.g. for DistilBERT, attention_mask has shape (batch_size, seq_len)
+                    attention_mask = attention_mask.repeat(self.config.adapters.active_setup.parallel_channels, 1)
+                else:
+                    attention_mask = attention_mask.repeat(
+                        self.config.adapters.active_setup.parallel_channels, 1, 1, 1
+                    )
+            context.adapters_parallelized = True
+        else:
+            # The base model should handle replication of input.
+            # Therefore, we assume the (replicated) input batch to be divisible by the number of parallel channels.
+            if residual_input.shape[0] % adapter_setup.parallel_channels != 0:
+                raise ValueError(
+                    "The total input batch size in a Parallel adapter block must be divisible by the number of"
+                    " parallel channels."
+                )
+            orig_batch_size = residual_input.shape[0] // adapter_setup.parallel_channels
 
-        # Select index range for batch split
-        # Ignore slices that go beyond the prefix states bsz
-        # (this is the case for slices produced by Parallel blocks which operate on replicated kv states)
-        if state.idx_slice is not None and state.idx_slice.start < prefix_keys.size(0):
-            prefix_keys = prefix_keys[state.idx_slice]
-            prefix_values = prefix_values[state.idx_slice]
+        # sequentially feed different parts of the blown-up batch into different adapters
+        children_outputs = []
+        # track which prefix is longest for padding in the end
+        max_prefix_length = 0
+        for i, child in enumerate(adapter_setup):
+            # construct inputs to child modules
+            inputs = {
+                "key_states": key_states[i * orig_batch_size : (i + 1) * orig_batch_size],
+                "value_states": value_states[i * orig_batch_size : (i + 1) * orig_batch_size],
+                "residual_input": residual_input[i * orig_batch_size : (i + 1) * orig_batch_size],
+                "attention_mask": attention_mask[i * orig_batch_size : (i + 1) * orig_batch_size]
+                if attention_mask is not None
+                else None,
+                "invert_mask": invert_mask,
+                "idx_range": idx_range,
+            }
 
-        if adapter_setup in self.prefix_gates:
-            gate = self.prefix_gates[adapter_setup]
-            gate_output = torch.mean(torch.sigmoid(gate(state.residual_input)), dim=1)
-            self._store_gating_score(adapter_setup, gate_output)
-            gate_output_key = gate_output[:, 0].view(-1, 1, 1, 1)
-            gate_output_value = gate_output[:, -1].view(-1, 1, 1, 1)
-            prefix_keys = prefix_keys * gate_output_key
-            prefix_values = prefix_values * gate_output_value
+            # Case 1: We have a nested stack -> call stack method
+            if isinstance(child, Stack):
+                child_outputs = self.adapter_stack(
+                    child,
+                    **inputs,
+                    lvl=lvl + 1,
+                )
+                children_outputs.append(child_outputs)
+            # Case 2. We have a nested batchsplit block -> call batchsplit method
+            elif isinstance(child, BatchSplit):
+                child_outputs = self.adapter_batchsplit(
+                    child,
+                    **inputs,
+                    lvl=lvl + 1,
+                )
+                children_outputs.append(child_outputs)
+            # Case 3: We have a single adapter which is part of this module -> forward pass
+            elif child in self.prefixes:
+                child_outputs = self.single_forward(
+                    child,
+                    **inputs,
+                )
+                children_outputs.append(child_outputs)
+            # Case 4: nesting other composition blocks is invalid
+            elif isinstance(child, AdapterCompositionBlock):
+                raise ValueError(
+                    "Invalid adapter setup. Cannot nest {} in {}".format(
+                        child.__class__.__name__, adapter_setup.__class__.__name__
+                    )
+                )
+            # As all prefix tuning modules are centrally stored, fail if not found.
+            else:
+                raise ValueError(f"Unknown prefix tuning name '{child}'.")
 
-        # Replicate for Parallel block
-        prefix_keys, prefix_values = adjust_tensors_for_parallel(state.key_states, prefix_keys, prefix_values)
+            # update max prefix length
+            current_prefix_length = child_outputs[0].shape[-2]
+            if current_prefix_length > max_prefix_length:
+                max_prefix_length = current_prefix_length
 
-        key_states = torch.cat([prefix_keys, state.key_states], dim=2)
-        value_states = torch.cat([prefix_values, state.value_states], dim=2)
-        if state.attention_mask is not None:
-            if state.attention_mask.dim() == 2:  # e.g. for DistilBERT, attention_mask has shape (batch_size, seq_len)
-                prefix_mask = torch.ones(batch_size, prefix_keys.size(2)).to(
-                    device=state.attention_mask.device, dtype=state.attention_mask.dtype
+        # concatenate all outputs and return
+        key_states, value_states, residual_input, attention_mask = self._pad_and_concat(
+            max_prefix_length, children_outputs, invert_mask=invert_mask
+        )
+        return key_states, value_states, residual_input, attention_mask
+
+    def adapter_batchsplit(
+        self,
+        adapter_setup: BatchSplit,
+        key_states,
+        value_states,
+        residual_input,
+        attention_mask=None,
+        invert_mask=True,
+        idx_range=None,
+        lvl=0,
+    ):
+        if not sum(adapter_setup.batch_sizes) == key_states.shape[0]:
+            raise IndexError(
+                "The given batch has a size of {} which is not compatible with batch_sizes {}".format(
+                    key_states.shape[0], adapter_setup.batch_sizes
+                )
+            )
+
+        children_outputs = []
+        # track which prefix is longest for padding in the end
+        max_prefix_length = 0
+        for i, adapter_block in enumerate(adapter_setup):
+            # compute ids of sequences that should be passed to the ith adapter
+            if idx_range is None:
+                split_idx_range = range(
+                    sum(adapter_setup.batch_sizes[:i]),
+                    sum(adapter_setup.batch_sizes[: i + 1]),
                 )
             else:
-                prefix_mask = torch.ones(batch_size, 1, state.attention_mask.size(2), prefix_keys.size(2)).to(
-                    device=state.attention_mask.device, dtype=state.attention_mask.dtype
+                split_idx_range = range(
+                    idx_range.start + sum(adapter_setup.batch_sizes[:i]),
+                    idx_range.start + sum(adapter_setup.batch_sizes[: i + 1]),
                 )
-            if state.invert_mask:
-                prefix_mask = 1.0 - prefix_mask
-            (prefix_mask,) = adjust_tensors_for_parallel(state.attention_mask, prefix_mask)
-            attention_mask = torch.cat([prefix_mask, state.attention_mask], dim=-1)
-        else:
-            attention_mask = None
+            inputs = {
+                "key_states": key_states[split_idx_range],
+                "value_states": value_states[split_idx_range],
+                "residual_input": residual_input[split_idx_range],
+                "attention_mask": attention_mask[split_idx_range] if attention_mask is not None else None,
+                "invert_mask": invert_mask,
+                "idx_range": split_idx_range,
+            }
+            # Case 1: We have a nested stack -> call stack method
+            if isinstance(adapter_block, Stack):
+                child_outputs = self.adapter_stack(
+                    adapter_block,
+                    **inputs,
+                    lvl=lvl + 1,
+                )
+                children_outputs.append(child_outputs)
+            # Case 2: We have a nested batch split block -> call batchsplit method
+            elif isinstance(adapter_block, BatchSplit):
+                child_outputs = self.adapter_batchsplit(
+                    adapter_block,
+                    **inputs,
+                    lvl=lvl + 1,
+                )
+                children_outputs.append(child_outputs)
+            # Case 4: We have a single adapter which is part of this module -> forward pass
+            elif adapter_block in self.prefixes:
+                child_outputs = self.single_forward(
+                    adapter_block,
+                    **inputs,
+                )
+                children_outputs.append(child_outputs)
+            # Case 5: nesting other composition blocks is invalid
+            elif isinstance(adapter_block, AdapterCompositionBlock):
+                raise ValueError(
+                    "Invalid adapter setup. Cannot nest {} in {}".format(
+                        adapter_block.__class__.__name__, adapter_setup.__class__.__name__
+                    )
+                )
+            # As all prefix tuning modules are centrally stored, fail if not found.
+            else:
+                raise ValueError(f"Unknown prefix tuning name '{adapter_block}'.")
 
-        return state._replace(key_states=key_states, value_states=value_states, attention_mask=attention_mask)
+            # update max prefix length
+            current_prefix_length = child_outputs[0].shape[-2]
+            if current_prefix_length > max_prefix_length:
+                max_prefix_length = current_prefix_length
+
+        # concatenate all outputs and return
+        key_states, value_states, residual_input, attention_mask = self._pad_and_concat(
+            max_prefix_length, children_outputs, invert_mask=invert_mask
+        )
+        return key_states, value_states, residual_input, attention_mask
 
     def forward(self, key_states, value_states, residual_input, attention_mask=None, invert_mask=True):
-        adapter_setup = self.get_active_setup()
+        adapter_setup = self.get_active_setup(self.prefixes)
         if adapter_setup is not None:
-            state = PrefixTuningState(key_states, value_states, residual_input, attention_mask, invert_mask)
-            state = self.compose(adapter_setup, state)
-            key_states, value_states, residual_input, attention_mask = state[:4]
+            if isinstance(adapter_setup, Stack):
+                key_states, value_states, _, attention_mask = self.adapter_stack(
+                    adapter_setup,
+                    key_states,
+                    value_states,
+                    residual_input,
+                    attention_mask=attention_mask,
+                    invert_mask=invert_mask,
+                )
+            elif isinstance(adapter_setup, Parallel):
+                key_states, value_states, _, attention_mask = self.adapter_parallel(
+                    adapter_setup,
+                    key_states,
+                    value_states,
+                    residual_input,
+                    attention_mask=attention_mask,
+                    invert_mask=invert_mask,
+                )
+            elif isinstance(adapter_setup, BatchSplit):
+                key_states, value_states, _, attention_mask = self.adapter_batchsplit(
+                    adapter_setup,
+                    key_states,
+                    value_states,
+                    residual_input,
+                    attention_mask=attention_mask,
+                    invert_mask=invert_mask,
+                )
+            else:
+                raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with prefix tuning.")
 
         return key_states, value_states, attention_mask
