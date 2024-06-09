@@ -25,7 +25,7 @@ class LoRA(nn.Module):
         self.composition_mode = config.composition_mode
         self.attn_matrices = config.attn_matrices
         self.use_gating = config.use_gating
-
+        self.is_dora = config.is_dora
         # Optional dropout
         if config.dropout > 0.0:
             self.lora_dropout = nn.Dropout(p=config.dropout)
@@ -39,7 +39,14 @@ class LoRA(nn.Module):
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
-            self.scaling = self.lora_alpha / math.sqrt(self.r)
+            if self.lora_alpha is None or self.lora_alpha == 0:
+                self.scaling = self.lora_alpha = 1.0
+            else:
+                if not self.is_dora:
+                    self.scaling = self.lora_alpha / self.r
+                else:
+                    self.scaling = self.lora_alpha / math.sqrt(self.r)
+            
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
 
             if self.use_gating:
@@ -202,6 +209,9 @@ class Linear(LoRALayer, nn.Linear):
                     delta_w = T(lora.lora_B)
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
+                    if lora.is_dora:
+                        delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                        delta_w = delta_w * lora.m
                 self.weight.data = lora.com_inv(self.weight.data, delta_w)
             self.merged = None
 
@@ -216,8 +226,9 @@ class Linear(LoRALayer, nn.Linear):
                 delta_w = T(lora.lora_B)
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
-                delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                delta_w = delta_w * lora.m
+                if lora.is_dora:
+                    delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                    delta_w = delta_w * lora.m
             weight = lora.com(weight, delta_w, scaling=scaling)
 
         return weight
@@ -250,10 +261,13 @@ class Linear(LoRALayer, nn.Linear):
                         if lora.composition_mode == "scale":
                             delta_w = lora.lora_B.view(1, 1, -1)
                         else:
-                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
-                            delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                            delta_w = delta_w * lora.m
+                            delta_w = lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B)
+                            if lora.is_dora:
+                                delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                delta_w = delta_w * lora.m
                         if lora.use_gating:
+                            if lora.is_dora:
+                                delta_w = delta_w * self.scaling
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
                             self._store_gating_score(adapter_setup[0], gate)
@@ -357,7 +371,10 @@ class MergedLinear(LoRALayer, nn.Linear):
                     delta_w = F.conv1d(
                         lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
                     ).squeeze(0)
-                # shape after transpose: <head_dim> x <head_dim * n_heads>
+         
+                    if lora.is_dora:
+                        delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                        delta_w = delta_w * lora.m
                 delta_w = delta_w.transpose(-2, -1)
                 self.weight.data = lora.com_inv(self.weight.data, T(self.pad(delta_w, lora)))
             self.merged = None
@@ -374,9 +391,13 @@ class MergedLinear(LoRALayer, nn.Linear):
                 delta_w = F.conv1d(
                     lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
                 ).squeeze(0)
+                if lora.is_dora:
+                    delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                    delta_w = delta_w * lora.m
 
             # shape after transpose: <head_dim> x <head_dim * n_heads>
             delta_w = delta_w.transpose(-2, -1)
+
             weight = lora.com(weight, T(self.pad(delta_w, lora)))
 
         return weight
@@ -412,10 +433,12 @@ class MergedLinear(LoRALayer, nn.Linear):
                             after_B = F.conv1d(
                                 after_A.transpose(-2, -1), lora.lora_B.unsqueeze(-1), groups=sum(lora.enable_lora)
                             ).transpose(-2, -1)
-                            delta_w = lora.lora_alpha * after_B
-                            delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                            delta_w = delta_w * lora.m
+                            if lora.is_dora:
+                                delta_w = after_B / (after_B.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                delta_w = delta_w * lora.m
                         if lora.use_gating:
+                            if lora.is_dora:
+                                delta_w = delta_w * self.scaling
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1)
                             self._store_gating_score(adapter_setup[0], gate)

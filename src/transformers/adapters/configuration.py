@@ -476,7 +476,7 @@ class LoRAConfig(AdapterConfigBase):
     composition_mode: str = "add"
     init_weights: str = "lora"
     use_gating: bool = False
-
+    is_dora: bool = False
 
 @dataclass(eq=False)
 class IA3Config(LoRAConfig):
