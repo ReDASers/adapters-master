@@ -477,7 +477,7 @@ class LoRAConfig(AdapterConfigBase):
     init_weights: str = "lora"
     use_gating: bool = False
     is_dora: bool = False
-    scaling: Union[float, str] = "learnable",
+    scaling: Union[float, str] = "learnable"
 
 @dataclass(eq=False)
 class IA3Config(LoRAConfig):

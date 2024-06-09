@@ -36,7 +36,7 @@ class LoRA(nn.Module):
             self.scaling = 1.0
         elif isinstance(config["scaling"], float):
             self.scaling = config["scaling"]
-        elif config["scaling"] == "learned":
+        elif config["scaling"] == "learnable":
             self.scaling = nn.Parameter(torch.ones(1))
         else:
             raise ValueError("Unknown scaling type: {}".format(config["scaling"]))
