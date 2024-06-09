@@ -446,14 +446,15 @@ class LoRALinear(LoRALayer, ComposableAdapterLayerBase):
         )
 
     def compose_single(self, adapter_setup: str, state: LoRAState, lvl: int = 0) -> LoRAState:
+        if adapter_setup is None:
+            adapter_setup = self.get_active_setup()
         lora = self.loras[adapter_setup]
         hidden_states, gate = lora(state.hidden_states, state.layer_input)
         
-        adapter_setup = self.get_active_setup()
-        if adapter_setup is not None:
-            context = ForwardContext.get_context()
-            if gate is not None:
-                self._store_gating_score(adapter_setup, gate)
+        
+        context = ForwardContext.get_context()
+        if gate is not None:
+            self._store_gating_score(adapter_setup, gate)
         
         return state._replace(hidden_states=hidden_states, last=adapter_setup)
 
