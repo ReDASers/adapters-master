@@ -36,13 +36,14 @@ class LoRA(nn.Module):
             self.scaling = 1.0
         elif isinstance(config["scaling"], float):
             self.scaling = config["scaling"]
+            if self.scaling  <= 0:
+                self.scaling = 1.0
         elif config["scaling"] == "learnable":
-            self.scaling = nn.Parameter(torch.ones(1))
+            self.scaling = nn.Parameter(torch.ones(1, requires_grad=True))
         else:
             raise ValueError("Unknown scaling type: {}".format(config["scaling"]))
         
-        if self.scaling  <= 0:
-            self.scaling = 1.0
+        
         # Actual trainable parameters
         if self.r > 1 and self.composition_mode == "scale":
             raise ValueError("Can only use composition_mode='scale' when r == 1.")
