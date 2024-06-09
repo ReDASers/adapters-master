@@ -267,7 +267,7 @@ class Linear(LoRALayer, nn.Linear):
                                 delta_w = delta_w * lora.m
                         if lora.use_gating:
                             if lora.is_dora:
-                                delta_w = delta_w * self.scaling
+                                delta_w = delta_w * lora.scaling
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
                             self._store_gating_score(adapter_setup[0], gate)
@@ -438,7 +438,7 @@ class MergedLinear(LoRALayer, nn.Linear):
                                 delta_w = delta_w * lora.m
                         if lora.use_gating:
                             if lora.is_dora:
-                                delta_w = delta_w * self.scaling
+                                delta_w = delta_w * lora.scaling
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1)
                             self._store_gating_score(adapter_setup[0], gate)
