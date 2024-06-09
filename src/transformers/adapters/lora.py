@@ -95,7 +95,7 @@ class LoRA(nn.Module):
         if scaling is None:
             scaling =  1.0
         p = self.scaling
-        print(p)
+        
         if self.composition_mode == "add":
             return weights + added * scaling * p * self.lora_alpha
         elif self.composition_mode == "scale":
