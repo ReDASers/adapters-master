@@ -33,11 +33,13 @@ class LoRA(nn.Module):
             self.lora_dropout = lambda x: x
 
         if config["scaling"] is None:
-            self.scaling = 1.0
+            self.scaling = torch.tensor(1.0)
         elif isinstance(config["scaling"], float):
             self.scaling = config["scaling"]
             if self.scaling  <= 0:
-                self.scaling = 1.0
+                self.scaling = torch.tensor(1.0)
+            else:
+                self.scaling = torch.tensor(self.scaling)
         elif config["scaling"] == "learnable":
             self.scaling = nn.Parameter(torch.ones(1, requires_grad=True))
         else:
@@ -91,12 +93,13 @@ class LoRA(nn.Module):
     def com(self, weights: torch.Tensor, added: torch.Tensor, scaling=None) -> torch.Tensor:
         """Performs the composition operation between existing and injected weights."""
         if scaling is None:
-            scaling = self.scaling * self.lora_alpha
-
+            scaling =  1.0
+        p = self.scaling
+        print(p)
         if self.composition_mode == "add":
-            return weights + added * scaling  
+            return weights + added * scaling * p * self.lora_alpha
         elif self.composition_mode == "scale":
-            return weights * (added * scaling)
+            return weights * (added * scaling * p * self.lora_alpha)
         else:
             raise ValueError("Invalid composition mode.")
 
@@ -283,8 +286,6 @@ class Linear(LoRALayer, nn.Linear):
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
                             self._store_gating_score(adapter_setup[0], gate)
-                            if lora.is_dora:
-                                gate = gate * lora.scaling * lora.lora_alpha
                         else:
                             gate = None
                         result = lora.com(result, delta_w, scaling=gate)
@@ -457,8 +458,6 @@ class MergedLinear(LoRALayer, nn.Linear):
                             gate = self.pad(
                                 gate.repeat_interleave(self.out_features // 3, dim=-1), lora, fill_value=1
                             ).unsqueeze(1)
-                            if lora.is_dora:
-                                gate = gate * lora.scaling * lora.lora_alpha
                         else:
                             gate = None
                         # result = (batch_size, seq_len, head_dim * 3)
