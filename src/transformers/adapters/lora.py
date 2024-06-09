@@ -45,8 +45,10 @@ class LoRA(nn.Module):
                 if not self.is_dora:
                     self.scaling = self.lora_alpha / self.r
                 else:
-                    self.scaling = self.lora_alpha / math.sqrt(self.r)
-            
+                    # Initialize scaling based on alpha
+                    self.scaling = nn.Parameter(torch.tensor(config.alpha / math.sqrt(self.r), dtype=torch.float32))  # Make scaling a learnable parameter
+
+            print(self.scaling)
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
 
             if self.use_gating:
@@ -80,8 +82,10 @@ class LoRA(nn.Module):
         if scaling is None:
             scaling = self.scaling
         if self.composition_mode == "add":
+            print(scaling)
             return weights + added * scaling
         elif self.composition_mode == "scale":
+            print(scaling)
             return weights * (added * scaling)
         else:
             raise ValueError("Invalid composition mode.")
@@ -89,8 +93,10 @@ class LoRA(nn.Module):
     def com_inv(self, weights: torch.Tensor, added: torch.Tensor) -> torch.Tensor:
         """Inverts the composition operation between existing and injected weights."""
         if self.composition_mode == "add":
+            print(self.scaling)
             return weights - added * self.scaling
         elif self.composition_mode == "scale":
+            print(self.scaling)
             return weights / (added * self.scaling)
         else:
             raise ValueError("Invalid composition mode.")
@@ -268,6 +274,7 @@ class Linear(LoRALayer, nn.Linear):
                         if lora.use_gating:
                             if lora.is_dora:
                                 delta_w = delta_w * lora.scaling
+                                print(lora.scaling)
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
                             self._store_gating_score(adapter_setup[0], gate)
@@ -439,6 +446,7 @@ class MergedLinear(LoRALayer, nn.Linear):
                         if lora.use_gating:
                             if lora.is_dora:
                                 delta_w = delta_w * lora.scaling
+                                print(lora.scaling)
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1)
                             self._store_gating_score(adapter_setup[0], gate)
