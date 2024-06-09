@@ -18,6 +18,7 @@ from ..composition import AdapterCompositionBlock, Average, BatchSplit, Parallel
 from ..configuration import LoRAConfig, ModelAdaptersConfig
 from .adapter_layer_base import AdapterLayerBase, ComposableAdapterLayerBase
 from .utils import dequantize_bnb_weight
+from ..context import ForwardContext
 
 
 try:
@@ -447,9 +448,13 @@ class LoRALinear(LoRALayer, ComposableAdapterLayerBase):
     def compose_single(self, adapter_setup: str, state: LoRAState, lvl: int = 0) -> LoRAState:
         lora = self.loras[adapter_setup]
         hidden_states, gate = lora(state.hidden_states, state.layer_input)
-        if gate is not None:
-            self._store_gating_score(adapter_setup, gate)
-
+        
+        adapter_setup = self.get_active_setup()
+        if adapter_setup is not None:
+            context = ForwardContext.get_context()
+            if gate is not None:
+                self._store_gating_score(adapter_setup, gate)
+        
         return state._replace(hidden_states=hidden_states, last=adapter_setup)
 
     def forward(self, input_states: torch.Tensor):
@@ -722,6 +727,7 @@ class LoRAMergedLinear(LoRALayer, nn.Linear):
             adapter_setup = self.get_active_setup()
             if adapter_setup is not None:
                 if len(adapter_setup) == 1:
+                    context = ForwardContext.get_context()
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     lora = self.loras[adapter_setup[0]]
                     if lora.r > 0:

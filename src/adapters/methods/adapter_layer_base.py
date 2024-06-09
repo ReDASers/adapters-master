@@ -53,7 +53,9 @@ class AdapterLayerBase(metaclass=ABCMeta):
 
     def _store_gating_score(self, adapter_name, gating_score):
         context = ForwardContext.get_context()
-        if context.output_adapter_gating_scores:
+        if context is None:
+            raise Warning("No context found. Gating scores will not be stored.")
+        if context is not None and context.output_adapter_gating_scores:
             gating_cache = context.adapter_gating_scores
             if self.layer_idx not in gating_cache[adapter_name]:
                 gating_cache[adapter_name][self.layer_idx] = {}
