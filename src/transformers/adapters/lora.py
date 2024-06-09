@@ -32,6 +32,17 @@ class LoRA(nn.Module):
         else:
             self.lora_dropout = lambda x: x
 
+        if config["scaling"] is None:
+            self.scaling = 1.0
+        elif isinstance(config["scaling"], float):
+            self.scaling = config["scaling"]
+        elif config["scaling"] == "learned":
+            self.scaling = nn.Parameter(torch.ones(1))
+        else:
+            raise ValueError("Unknown scaling type: {}".format(config["scaling"]))
+        
+        if self.scaling  <= 0:
+            self.scaling = 1.0
         # Actual trainable parameters
         if self.r > 1 and self.composition_mode == "scale":
             raise ValueError("Can only use composition_mode='scale' when r == 1.")
@@ -40,17 +51,14 @@ class LoRA(nn.Module):
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
             if self.lora_alpha is None or self.lora_alpha == 0:
-                self.scaling = self.lora_alpha = 1.0
+                self.lora_alpha = 1.0
             else:
                 if not self.is_dora:
-                    self.lora_alpha = config.alpha
-                    self.scaling = 1.0 / self.r
+                    self.lora_alpha = self.lora_alpha / self.r
                 else:
-                    # Initialize scaling based on alpha
-                    self.lora_alpha = config.alpha / math.sqrt(self.r)
-                    self.scaling = nn.Parameter(torch.tensor(0.5, dtype=torch.float32))  # Make scaling a learnable parameter
-
-            print(self.scaling)
+                    self.lora_alpha = self.lora_alpha / math.sqrt(self.r)
+                    
+           
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
 
             if self.use_gating:
@@ -83,6 +91,7 @@ class LoRA(nn.Module):
         """Performs the composition operation between existing and injected weights."""
         if scaling is None:
             scaling = self.scaling * self.lora_alpha
+
         if self.composition_mode == "add":
             return weights + added * scaling  
         elif self.composition_mode == "scale":
@@ -270,12 +279,11 @@ class Linear(LoRALayer, nn.Linear):
                                 delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                                 delta_w = delta_w * lora.m
                         if lora.use_gating:
-                            if lora.is_dora:
-                                delta_w = delta_w * lora.scaling * lora.lora_alpha
-                                print(lora.scaling*lora.lora_alpha)
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
                             self._store_gating_score(adapter_setup[0], gate)
+                            if lora.is_dora:
+                                gate = gate * lora.scaling * lora.lora_alpha
                         else:
                             gate = None
                         result = lora.com(result, delta_w, scaling=gate)
@@ -442,15 +450,14 @@ class MergedLinear(LoRALayer, nn.Linear):
                                 delta_w = after_B / (after_B.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                                 delta_w = delta_w * lora.m
                         if lora.use_gating:
-                            if lora.is_dora:
-                                delta_w = delta_w * lora.scaling * lora.lora_alpha
-                                print(lora.scaling*lora.lora_alpha)
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1)
                             self._store_gating_score(adapter_setup[0], gate)
                             gate = self.pad(
                                 gate.repeat_interleave(self.out_features // 3, dim=-1), lora, fill_value=1
                             ).unsqueeze(1)
+                            if lora.is_dora:
+                                gate = gate * lora.scaling * lora.lora_alpha
                         else:
                             gate = None
                         # result = (batch_size, seq_len, head_dim * 3)
