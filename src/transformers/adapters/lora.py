@@ -43,10 +43,12 @@ class LoRA(nn.Module):
                 self.scaling = self.lora_alpha = 1.0
             else:
                 if not self.is_dora:
-                    self.scaling = self.lora_alpha / self.r
+                    self.lora_alpha = config.alpha
+                    self.scaling = 1.0 / self.r
                 else:
                     # Initialize scaling based on alpha
-                    self.scaling = nn.Parameter(torch.tensor(config.alpha / math.sqrt(self.r), dtype=torch.float32))  # Make scaling a learnable parameter
+                    self.lora_alpha = config.alpha / math.sqrt(self.r)
+                    self.scaling = nn.Parameter(torch.tensor(0.5, dtype=torch.float32))  # Make scaling a learnable parameter
 
             print(self.scaling)
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
@@ -80,12 +82,10 @@ class LoRA(nn.Module):
     def com(self, weights: torch.Tensor, added: torch.Tensor, scaling=None) -> torch.Tensor:
         """Performs the composition operation between existing and injected weights."""
         if scaling is None:
-            scaling = self.scaling
+            scaling = self.scaling * self.lora_alpha
         if self.composition_mode == "add":
-            print(scaling)
-            return weights + added * scaling
+            return weights + added * scaling  
         elif self.composition_mode == "scale":
-            print(scaling)
             return weights * (added * scaling)
         else:
             raise ValueError("Invalid composition mode.")
@@ -93,11 +93,9 @@ class LoRA(nn.Module):
     def com_inv(self, weights: torch.Tensor, added: torch.Tensor) -> torch.Tensor:
         """Inverts the composition operation between existing and injected weights."""
         if self.composition_mode == "add":
-            print(self.scaling)
-            return weights - added * self.scaling
+            return weights - added * self.scaling * self.lora_alpha
         elif self.composition_mode == "scale":
-            print(self.scaling)
-            return weights / (added * self.scaling)
+            return weights / (added * self.scaling * self.lora_alpha)
         else:
             raise ValueError("Invalid composition mode.")
 
@@ -273,8 +271,8 @@ class Linear(LoRALayer, nn.Linear):
                                 delta_w = delta_w * lora.m
                         if lora.use_gating:
                             if lora.is_dora:
-                                delta_w = delta_w * lora.scaling
-                                print(lora.scaling)
+                                delta_w = delta_w * lora.scaling * lora.lora_alpha
+                                print(lora.scaling*lora.lora_alpha)
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
                             self._store_gating_score(adapter_setup[0], gate)
@@ -445,8 +443,8 @@ class MergedLinear(LoRALayer, nn.Linear):
                                 delta_w = delta_w * lora.m
                         if lora.use_gating:
                             if lora.is_dora:
-                                delta_w = delta_w * lora.scaling
-                                print(lora.scaling)
+                                delta_w = delta_w * lora.scaling * lora.lora_alpha
+                                print(lora.scaling*lora.lora_alpha)
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1)
                             self._store_gating_score(adapter_setup[0], gate)
