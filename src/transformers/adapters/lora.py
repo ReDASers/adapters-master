@@ -64,10 +64,7 @@ class LoRA(nn.Module):
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
 
             if self.use_gating:
-                if self.is_dora:
-                    self.gate = nn.Linear(lora_B_shape[-1], gating_heads)
-                else:
-                    self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
+                self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
                 self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
