@@ -274,8 +274,8 @@ class Linear(LoRALayer, nn.Linear):
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
                             delta_w = lora.lora_B.view(1, 1, -1)
-                            if lora.is_dora:
-                                delta_w = delta_w/ (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                            #if lora.is_dora:
+                              #  delta_w = delta_w/ (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                                 #delta_w = delta_w * lora.m
                                 #delta_w = delta_w.view(1, 1, -1)
                             
