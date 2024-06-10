@@ -273,13 +273,13 @@ class Linear(LoRALayer, nn.Linear):
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
-                           
+                            delta_w = lora.lora_B.view(1, 1, -1)
                             if lora.is_dora:
-                                direction = lora.lora_B / (lora.lora_B.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                                delta_w = direction * lora.m
-                                delta_w = delta_w.view(1, 1, -1)
-                            else:
-                                delta_w = lora.lora_B.view(1, 1, -1)
+                                #direction = lora.lora_B / (lora.lora_B.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                delta_w = delta_w * lora.m
+                                #delta_w = delta_w.view(1, 1, -1)
+                            
+                                
                         else:
                             delta_w = lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B)
                             if lora.is_dora:
