@@ -91,8 +91,6 @@ class LoRA(nn.Module):
         if gating is None:
             gating =  1.0
         
-        if self.scaling != 1.0:
-            print("Scaling: ", self.scaling)
         if self.composition_mode == "add":
             return weights + added * gating * self.scaling * self.lora_alpha
         elif self.composition_mode == "scale":
