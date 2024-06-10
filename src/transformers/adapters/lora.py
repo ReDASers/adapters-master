@@ -79,10 +79,9 @@ class LoRA(nn.Module):
                     nn.init.normal_(self.lora_A, std=0.02)
                 nn.init.normal_(self.lora_B, std=0.02)
             elif config.init_weights == "ia3":
+                if self.composition_mode == "add":
+                    nn.init.ones_(self.lora_A, std=0.02)
                 nn.init.ones_(self.lora_B)
-                if self.is_dora:
-                    self.lora_B = nn.Parameter(torch.randn(lora_B_shape))
-                    self.lora_B.data = self.lora_B.data / self.lora_B.data.norm(p=2, dim=-1, keepdim=True)
             else:
                 raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
 
@@ -221,9 +220,9 @@ class Linear(LoRALayer, nn.Linear):
                     delta_w = T(lora.lora_B)
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
-                if lora.is_dora:
-                    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                    delta_w = direction * lora.m
+                    if lora.is_dora:
+                        direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                        delta_w = direction * lora.m
                 self.weight.data = lora.com_inv(self.weight.data, delta_w)
             self.merged = None
 
@@ -238,9 +237,9 @@ class Linear(LoRALayer, nn.Linear):
                 delta_w = T(lora.lora_B)
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
-            if lora.is_dora:
-                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                delta_w = direction * lora.m
+                if lora.is_dora:
+                    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                    delta_w = direction * lora.m
             weight = lora.com(weight, delta_w, gating=scaling)
 
         return weight
@@ -390,9 +389,9 @@ class MergedLinear(LoRALayer, nn.Linear):
                         lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
                     ).squeeze(0)
          
-                if lora.is_dora:
-                    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                    delta_w = direction * lora.m
+                    if lora.is_dora:
+                        direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                        delta_w = direction * lora.m
                 delta_w = delta_w.transpose(-2, -1)
                 self.weight.data = lora.com_inv(self.weight.data, T(self.pad(delta_w, lora)))
             self.merged = None
@@ -447,15 +446,15 @@ class MergedLinear(LoRALayer, nn.Linear):
                     lora = self.loras[adapter_setup[0]]
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
-                            delta_w = F.linear(x, lora.lora_B.view(1, 1, -1))
+                            delta_w = lora.lora_B.view(1, 1, -1)
                         else:
                             after_A = F.linear(lora.lora_dropout(x), lora.lora_A)
                             delta_w = F.conv1d(
                                 after_A.transpose(-2, -1), lora.lora_B.unsqueeze(-1), groups=sum(lora.enable_lora)
                             ).transpose(-2, -1)
-                        if lora.is_dora:
-                            direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                            delta_w = direction * lora.m
+                            if lora.is_dora:
+                                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                delta_w = direction * lora.m
                         if lora.use_gating:
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1)
