@@ -274,7 +274,7 @@ class Linear(LoRALayer, nn.Linear):
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
                             delta_w = lora.lora_B.view(1, 1, -1)
-                            delta_w = x @ delta_w
+                            delta_w = x @ torch.t(delta_w)
                         else:
                             delta_w = lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B)
                         if lora.is_dora:
