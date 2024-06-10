@@ -91,22 +91,24 @@ class LoRA(nn.Module):
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A)
                 nn.init.ones_(self.lora_B)
+                if self.is_dora:
+                    self.lora_B.data = self.lora_B.data / self.lora_B.data.norm(p=2, dim=-1, keepdim=True)
                 if self.use_gating:
                     nn.init.normal_(self.gate.weight, std=0.02)
             else:
                 raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
 
-    def com(self, weights: torch.Tensor, added: torch.Tensor, scaling=None) -> torch.Tensor:
+    def com(self, weights: torch.Tensor, added: torch.Tensor, gating=None) -> torch.Tensor:
         """Performs the composition operation between existing and injected weights."""
-        if scaling is None:
-            scaling =  1.0
+        if gating is None:
+            gating =  1.0
         p = self.scaling
         if p != 1.0:
             print("Scaling: ", p)
         if self.composition_mode == "add":
-            return weights + added * scaling * p * self.lora_alpha
+            return weights + added * gating * self.scaling * self.lora_alpha
         elif self.composition_mode == "scale":
-            return weights * (added * scaling * p * self.lora_alpha)
+            return weights * (added * gating * self.scaling * self.lora_alpha)
         else:
             raise ValueError("Invalid composition mode.")
 
@@ -253,7 +255,7 @@ class Linear(LoRALayer, nn.Linear):
             if lora.is_dora:
                 delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                 delta_w = delta_w * lora.m
-            weight = lora.com(weight, delta_w, scaling=scaling)
+            weight = lora.com(weight, delta_w, gating=scaling)
 
         return weight
 
@@ -297,7 +299,7 @@ class Linear(LoRALayer, nn.Linear):
                             self._store_gating_score(adapter_setup[0], gate)
                         else:
                             gate = None
-                        result = lora.com(result, delta_w, scaling=gate)
+                        result = lora.com(result, delta_w, gating=gate)
                     return result
                 else:
                     raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with LoRA.")
@@ -456,11 +458,11 @@ class MergedLinear(LoRALayer, nn.Linear):
                             delta_w = lora.lora_B.view(1, 1, -1)
                         else:
                             after_A = F.linear(lora.lora_dropout(x), lora.lora_A)
-                            after_B = F.conv1d(
+                            delta_w = F.conv1d(
                                 after_A.transpose(-2, -1), lora.lora_B.unsqueeze(-1), groups=sum(lora.enable_lora)
                             ).transpose(-2, -1)
                         if lora.is_dora:
-                            delta_w = after_B / (after_B.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                            delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                             delta_w = delta_w * lora.m
                         if lora.use_gating:
                             gate = 1 + torch.tanh(lora.gate(x))
@@ -473,7 +475,7 @@ class MergedLinear(LoRALayer, nn.Linear):
                             gate = None
                         # result = (batch_size, seq_len, head_dim * 3)
                         
-                        result = lora.com(result, self.pad(delta_w, lora), scaling=gate)
+                        result = lora.com(result, self.pad(delta_w, lora), gating=gate)
                     return result
                 else:
                     raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with LoRA.")
