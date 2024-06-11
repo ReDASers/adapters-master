@@ -274,13 +274,14 @@ class Linear(LoRALayer, nn.Linear):
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
 
-                            delta_w = torch.t(lora.lora_B)
+                            delta_w = lora.lora_B
                             
                             if lora.is_dora:
-                                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                pass
+                                #direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                                 
 
-                                delta_w = direction * lora.m
+                                #delta_w = direction * torch.t(lora.m)
                                 
                                 
                             delta_w = delta_w.view(1, 1, -1)
