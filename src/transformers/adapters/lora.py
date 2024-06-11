@@ -295,9 +295,9 @@ class Linear(LoRALayer, nn.Linear):
                             
                             if lora.is_dora:
                                 
-                                delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                                 
-
+                                delta_w = delta_w * direction
                                 delta_w = delta_w * torch.t(lora.m)
                                 
                                 
