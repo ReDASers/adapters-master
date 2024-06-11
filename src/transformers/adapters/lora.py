@@ -68,13 +68,14 @@ class LoRA(nn.Module):
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
                 self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
+                nn.init.normal_(self.m.data, std=0.02)
 
 
             if config.init_weights == "lora":
                 # initialize A the same way as the default for nn.Linear and B to zero
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-                nn.init.zeros_(self.lora_B)
+                nn.init.kaiming_normal_(self.lora_B, a=math.sqrt(5))
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
@@ -82,7 +83,11 @@ class LoRA(nn.Module):
             elif config.init_weights == "ia3":
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A)
-                nn.init.normal_(self.lora_B, mean=1.0, std=0.02)
+                nn.init.trunc_normal_(self.lora_B, mean=1.0, std=0.02, a = 2.0, b = 0.0)
+            elif config.init_weights == "xavier":
+                if self.composition_mode == "add":
+                    nn.init.ones_(self.lora_A)
+                nn.init.xavier_normal_(self.lora_B)
             else:
                 raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
 
