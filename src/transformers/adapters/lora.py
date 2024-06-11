@@ -82,7 +82,7 @@ class LoRA(nn.Module):
             elif config.init_weights == "ia3":
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A, std=0.02)
-                nn.init.ones_(self.lora_B)
+                nn.init.kaiming_uniform_(self.lora_B, a=math.sqrt(5))
             else:
                 raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
 
