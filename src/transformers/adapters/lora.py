@@ -219,11 +219,13 @@ class Linear(LoRALayer, nn.Linear):
             if lora.r > 0:
                 if lora.composition_mode == "scale":
                     delta_w = T(lora.lora_B)
+                    if lora.is_dora:
+                        delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
-                if lora.is_dora:
-                    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                    delta_w = direction * lora.m
+                    if lora.is_dora:
+                        direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                        delta_w = direction * lora.m
                 self.weight.data = lora.com_inv(self.weight.data, delta_w)
             self.merged = None
 
@@ -236,11 +238,13 @@ class Linear(LoRALayer, nn.Linear):
         if lora.r > 0:
             if lora.composition_mode == "scale":
                 delta_w = T(lora.lora_B)
+                if lora.is_dora:
+                    delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
-            if lora.is_dora:
-                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                delta_w = direction * lora.m
+                if lora.is_dora:
+                    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                    delta_w = direction * lora.m
             weight = lora.com(weight, delta_w, gating=scaling)
 
         return weight
@@ -285,9 +289,6 @@ class Linear(LoRALayer, nn.Linear):
                                 
                                 
                             delta_w = delta_w.view(1, 1, -1)
-                            
-                            
-                                
                         else:
                             delta_w = lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B)
                             
@@ -397,6 +398,8 @@ class MergedLinear(LoRALayer, nn.Linear):
             if lora.r > 0 and any(lora.enable_lora):
                 if lora.composition_mode == "scale":
                     delta_w = lora.lora_B
+                    if lora.is_dora:
+                        delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                 else:
                     delta_w = F.conv1d(
                         lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
@@ -417,6 +420,8 @@ class MergedLinear(LoRALayer, nn.Linear):
         if lora.r > 0:
             if lora.composition_mode == "scale":
                 delta_w = lora.lora_B
+                if lora.is_dora:
+                    delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
             else:
                 delta_w = F.conv1d(
                     lora.lora_A.data.unsqueeze(0), lora.lora_B.data.unsqueeze(-1), groups=sum(lora.enable_lora)
@@ -459,7 +464,10 @@ class MergedLinear(LoRALayer, nn.Linear):
                     lora = self.loras[adapter_setup[0]]
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
-                            delta_w = lora.lora_B.view(1, 1, -1)
+                            delta_w = lora.lora_B
+                            if lora.is_dora:
+                                delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                            delta_w = delta_w.view(1, 1, -1)
                         else:
                             after_A = F.linear(lora.lora_dropout(x), lora.lora_A)
                             delta_w = F.conv1d(
