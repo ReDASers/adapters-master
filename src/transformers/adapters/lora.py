@@ -68,7 +68,7 @@ class LoRA(nn.Module):
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
                 self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
-                nn.init.normal_(self.m.data, mean=1.0, std=0.02)
+                #nn.init.normal_(self.m.data, mean=1.0, std=0.02)
 
 
             if config.init_weights == "lora":
