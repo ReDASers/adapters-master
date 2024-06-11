@@ -67,10 +67,8 @@ class LoRA(nn.Module):
                 self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
-                if self.composition_mode == "add":
-                    self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
-                else:
-                    self.m = nn.Parameter(torch.ones(lora_B_shape[0]))
+                self.m = nn.Parameter(torch.ones(1, lora_B_shape[0]))
+
 
             if config.init_weights == "lora":
                 # initialize A the same way as the default for nn.Linear and B to zero
