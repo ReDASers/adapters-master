@@ -274,12 +274,16 @@ class Linear(LoRALayer, nn.Linear):
                         if lora.composition_mode == "scale":
 
                             delta_w = T(lora.lora_B)
+                            print("dw ", delta_w.shape)
                             if lora.is_dora:
                                 direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                print("dir ",direction.shape, " m ", lora.m.shape)
+
                                 delta_w = direction * lora.m
+                                print("dw2 ", delta_w.shape)
                                 
                             delta_w = delta_w.view(1, 1, -1)
-
+                            print("dw3 ", delta_w.shape)
                             
                                 
                         else:
