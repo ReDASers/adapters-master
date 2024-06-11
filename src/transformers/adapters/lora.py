@@ -277,23 +277,28 @@ class Linear(LoRALayer, nn.Linear):
                         if lora.composition_mode == "scale":
 
                             delta_w = T(lora.lora_B)
-                            print("dw ", delta_w.shape)
+                            print("loraB ", lora.lora_B.shape, " B.T ", delta_w.shape)
                             if lora.is_dora:
                                 direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                                 print("dir ",direction.shape, " m ", lora.m.shape)
 
                                 delta_w = direction * lora.m
-                                print("dw2 ", delta_w.shape)
+                                print("dw ", delta_w.shape)
                                 
                             delta_w = delta_w.view(1, 1, -1)
-                            print("dw3 ", delta_w.shape)
+                            print("dw2 ", delta_w.shape, " result ", result.shape)
                             
                                 
                         else:
+                            print("x ", x.shape, " A ", lora.lora_A.shape, " B ", lora.lora_B.shape)
                             delta_w = lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B)
+                            print("dw ", delta_w.shape)
                             if lora.is_dora:
                                 direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                print("dir ",direction.shape, " m ", lora.m.shape)
                                 delta_w = direction * lora.m
+                                print("dw2 ", delta_w.shape, " result ", result.shape)
+
                         if lora.use_gating:
                             gate = 1 + torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
