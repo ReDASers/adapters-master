@@ -220,9 +220,9 @@ class Linear(LoRALayer, nn.Linear):
                     delta_w = T(lora.lora_B)
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
-                    if lora.is_dora:
-                        direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                        delta_w = direction * lora.m
+                if lora.is_dora:
+                    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                    delta_w = direction * lora.m
                 self.weight.data = lora.com_inv(self.weight.data, delta_w)
             self.merged = None
 
@@ -237,9 +237,9 @@ class Linear(LoRALayer, nn.Linear):
                 delta_w = T(lora.lora_B)
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
-                if lora.is_dora:
-                    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                    delta_w = direction * lora.m
+            if lora.is_dora:
+                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                delta_w = direction * lora.m
             weight = lora.com(weight, delta_w, gating=scaling)
 
         return weight
@@ -272,11 +272,14 @@ class Linear(LoRALayer, nn.Linear):
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
-                            delta_w = lora.lora_B.view(1, 1, -1)
-                            #if lora.is_dora:
-                              #  delta_w = delta_w/ (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                                #delta_w = delta_w * lora.m
-                                #delta_w = delta_w.view(1, 1, -1)
+
+                            delta_w = T(lora.lora_B)
+                            if lora.is_dora:
+                                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                delta_w = direction * lora.m
+                                
+                            delta_w = delta_w.view(1, 1, -1)
+
                             
                                 
                         else:
