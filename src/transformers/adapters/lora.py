@@ -276,7 +276,7 @@ class Linear(LoRALayer, nn.Linear):
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
 
-                            delta_w = T(lora.lora_B)
+                            delta_w = torch.t(lora.lora_B)
                             print("loraB ", lora.lora_B.shape, " B.T ", delta_w.shape)
                             if lora.is_dora:
                                 direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
