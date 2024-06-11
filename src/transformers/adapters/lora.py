@@ -83,7 +83,7 @@ class LoRA(nn.Module):
             elif config.init_weights == "ia3":
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A)
-                nn.init.trunc_normal_(self.lora_B, mean=1.0, std=0.02, a = 2.0, b = 0.0)
+                nn.init.trunc_normal_(self.lora_B, mean=1.0, std=0.02, a = 0.0, b = 2.0)
             elif config.init_weights == "xavier":
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A)
