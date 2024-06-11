@@ -75,19 +75,19 @@ class LoRA(nn.Module):
                 # initialize A the same way as the default for nn.Linear and B to zero
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-                nn.init.kaiming_normal_(self.lora_B, a=math.sqrt(5))
+                nn.init.kaiming_uniform_(self.lora_B, non_linearity="relu", mode="fan_out")
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
-                nn.init.normal_(self.lora_B, mean=0.5, std=0.02)
+                nn.init.normal_(self.lora_B, mean=1.0, std=0.02)
             elif config.init_weights == "ia3":
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A)
-                nn.init.normal_(self.lora_B, mean=1.0, std=0.02)
-            elif config.init_weights == "xavier":
+                nn.init.ones_(self.lora_B)
+            elif config.init_weights == "norm":
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A)
-                nn.init.xavier_normal_(self.lora_B)
+                nn.init.normal_(self.lora_B, mean=0.0, std=1.0)
             else:
                 raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
 
