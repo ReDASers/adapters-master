@@ -75,7 +75,7 @@ class LoRA(nn.Module):
                 # initialize A the same way as the default for nn.Linear and B to zero
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-                nn.init.kaiming_uniform_(self.lora_B, non_linearity="relu", mode="fan_out")
+                nn.init.kaiming_uniform_(self.lora_B, mode="fan_out")
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
