@@ -34,21 +34,15 @@ class LoRA(nn.Module):
 
         if config["scaling"] is None:
             self.scaling = torch.tensor(1.0)
-            self.dynamic_scaling = "fixed"
         elif isinstance(config["scaling"], float):
             self.scaling = config["scaling"]
             if self.scaling  <= 0:
                 self.scaling = torch.tensor(1.0)
             else:
                 self.scaling = torch.tensor(self.scaling)
-            self.dynamic_scaling =  "fixed"
         elif config["scaling"] == "learnable":
             self.scaling = nn.Parameter(torch.ones(1))
             nn.init.ones_(self.scaling.data)
-            self.dynamic_scaling  =  "learnable"
-        elif config["scaling"] == "input_dependent":
-            self.scaling = torch.tensor(1.0)
-            self.dynamic_scaling = "input_dependent"
         else:
             raise ValueError("Unknown scaling type: {}".format(config["scaling"]))
         
@@ -63,38 +57,37 @@ class LoRA(nn.Module):
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
                 self.lora_alpha = self.lora_alpha / self.r if not self.is_dora else self.lora_alpha / math.sqrt(self.r)
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
-            if self.is_dora:
-                self.lora_C = nn.Parameter(torch.zeros((lora_B_shape[0], 1)))
-
+            
             if self.use_gating:
-                if self.is_dora:
-                    self.gate = nn.Linear(lora_B_shape[0], gating_heads)
-                self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
+                self.gate = nn.Linear(lora_B_shape[0], gating_heads)
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
                 self.m = nn.Parameter(torch.zeros(lora_B_shape))
                 nn.init.uniform_(self.m, a=0.98, b=1.02)
-
+                self.lora_C = nn.Parameter(torch.zeros((lora_B_shape[0], 1)))
+                nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
 
             if config.init_weights == "lora":
                 # initialize A the same way as the default for nn.Linear and B to zero
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-                nn.init.kaiming_uniform_(self.lora_B,a=math.sqrt(5))
+                nn.init.zeros_(self.lora_B)
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
-                nn.init.normal_(self.lora_B, mean=1.0, std=0.02)
+                nn.init.normal_(self.lora_B, std=0.02)
             elif config.init_weights == "ia3":
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A)
                 nn.init.ones_(self.lora_B)
+            elif config.init_weights == "xavier":
+                if self.composition_mode == "add":
+                    nn.init.xavier_uniform_(self.lora_A)
+                nn.init.xavier_uniform_(self.lora_B)
             elif config.init_weights == "prexia":
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
                 nn.init.kaiming_uniform_(self.lora_B, a=math.sqrt(5))
-                if self.is_dora:
-                    nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
             else:
                 raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
 
@@ -106,7 +99,7 @@ class LoRA(nn.Module):
         if self.composition_mode == "add":
             return weights + added * gating * self.scaling
         elif self.composition_mode == "scale":
-            return weights * (added * gating)
+            return weights * (added * gating * self.scaling)
         else:
             raise ValueError("Invalid composition mode.")
 
@@ -115,7 +108,7 @@ class LoRA(nn.Module):
         if self.composition_mode == "add":
             return weights - added * self.scaling
         elif self.composition_mode == "scale":
-            return weights / (added)
+            return weights / (added * self.scaling)
         else:
             raise ValueError("Invalid composition mode.")
 
@@ -241,8 +234,14 @@ class Linear(LoRALayer, nn.Linear):
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
                     if lora.is_dora:
-                        direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                        delta_w = direction * lora.m
+                        delta_w = lora.lora_alpha * delta_w
+                        mult = T(lora.lora_C)
+                        X_plus_AB = (self.weight.data + delta_w) 
+                        X_plus_AB_times_C = X_plus_AB * mult
+                        result = X_plus_AB_times_C * lora.scaling
+                        return result
+                        #direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                        #delta_w = direction * lora.m
                 self.weight.data = lora.com_inv(self.weight.data, delta_w)
             self.merged = None
 
