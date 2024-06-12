@@ -71,7 +71,7 @@ class LoRA(nn.Module):
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
                 self.m = nn.Linear(lora_B_shape[0], lora_B_shape[0])
-                nn.init.uniform_(self.m.weight, a=0.98, std=1.02)
+                nn.init.uniform_(self.m.weight, a=0.98, b=1.02)
 
 
             if config.init_weights == "lora":
