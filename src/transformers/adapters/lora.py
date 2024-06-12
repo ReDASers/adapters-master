@@ -302,7 +302,7 @@ class Linear(LoRALayer, nn.Linear):
                                 norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                                 unit_w = delta_w / norm_w
                                 direction = delta_w * unit_w
-                                delta_w = direction *(lora.scaling * lora.lora_alpha + 1e-9)
+                                delta_w = direction * torch.t(lora.m) * (lora.scaling * lora.lora_alpha + 1e-9)
                                 
                                 
                             delta_w = delta_w.view(1, 1, -1)
