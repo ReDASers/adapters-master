@@ -283,8 +283,6 @@ class Linear(LoRALayer, nn.Linear):
             if adapter_setup is not None:
                 if len(adapter_setup) == 1:
                     lora = self.loras[adapter_setup[0]]
-                    if lora.dynamic_scaling == "input_dependent":
-                        lora.scaling = x.norm(p=2, dim=-1, keepdim=True)
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     if lora.r > 0:
                         if lora.use_gating:
@@ -463,8 +461,6 @@ class MergedLinear(LoRALayer, nn.Linear):
             adapter_setup = self.get_active_setup(self.loras)
             if adapter_setup is not None:
                 if len(adapter_setup) == 1:
-                    if lora.dynamic_scaling == "input_dependent":
-                        lora.scaling = x.norm(p=2, dim=-1, keepdim=True)
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     lora = self.loras[adapter_setup[0]]
                     if lora.r > 0:
