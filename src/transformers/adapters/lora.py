@@ -195,7 +195,6 @@ class Linear(LoRALayer, nn.Linear):
         if no_init_bias and "bias" not in kwargs:
             kwargs["bias"] = False
         LoRALayer.__init__(self, location_key, config, in_features, out_features, **kwargs)
-        nn.Linear.__init__(self, in_features, out_features, **kwargs)  # Added to properly initialize nn.Linear
         
         self.attn_key = attn_key
         self.fan_in_fan_out = fan_in_fan_out
