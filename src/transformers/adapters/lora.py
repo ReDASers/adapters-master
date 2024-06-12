@@ -68,7 +68,7 @@ class LoRA(nn.Module):
                 self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
                 nn.init.normal_(self.gate.weight, mean=0.5, std=0.02)
             if self.is_dora:
-                self.m = nn.Linear(torch.ones(1, lora_B_shape[0]))
+                self.m = nn.Linear(1, lora_B_shape[0])
                 nn.init.uniform_(self.m.data, a=0.98, std=1.02)
 
 
