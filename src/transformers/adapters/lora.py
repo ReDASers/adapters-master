@@ -26,36 +26,35 @@ class LoRA(nn.Module):
         self.attn_matrices = config.attn_matrices
         self.use_gating = config.use_gating
         self.is_dora = config.is_dora
+        
         # Optional dropout
         if config.dropout > 0.0:
             self.lora_dropout = nn.Dropout(p=config.dropout)
         else:
             self.lora_dropout = lambda x: x
-
-        if config["scaling"] is None:
+        
+        # Initialize scaling based on config type
+        if config.scaling is None:  # Changed from config["scaling"]
             self.scaling = torch.tensor(1.0)
-        elif isinstance(config["scaling"], float):
-            self.scaling = config["scaling"]
-            if self.scaling  <= 0:
-                self.scaling = torch.tensor(1.0)
-            else:
-                self.scaling = torch.tensor(self.scaling)
-        elif config["scaling"] == "learnable":
+        elif isinstance(config.scaling, float):  # Changed from config["scaling"]
+            self.scaling = torch.tensor(max(config.scaling, 1.0))  # Ensure scaling is positive
+        elif config.scaling == "learnable":  # Changed from config["scaling"]
             self.scaling = nn.Parameter(torch.ones(1))
             nn.init.ones_(self.scaling.data)
         else:
-            raise ValueError("Unknown scaling type: {}".format(config["scaling"]))
+            raise ValueError(f"Unknown scaling type: {config.scaling}")  # Changed from config["scaling"]
         
-        
-        # Actual trainable parameters
+        # Validate composition mode and r
         if self.r > 1 and self.composition_mode == "scale":
             raise ValueError("Can only use composition_mode='scale' when r == 1.")
+        
+        # Initialize trainable parameters
         if self.r > 0:
             if self.lora_alpha is None or self.lora_alpha == 0:
                 self.lora_alpha = 1.0
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
-                self.lora_alpha = self.lora_alpha / self.r if not self.is_dora else self.lora_alpha / math.sqrt(self.r)
+                self.lora_alpha /= self.r if not self.is_dora else math.sqrt(self.r)
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
             
             if self.use_gating:
@@ -67,8 +66,8 @@ class LoRA(nn.Module):
                 self.lora_C = nn.Parameter(torch.zeros((lora_B_shape[0], 1)))
                 nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
 
+            # Initialize weights
             if config.init_weights == "lora":
-                # initialize A the same way as the default for nn.Linear and B to zero
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
                 nn.init.zeros_(self.lora_B)
@@ -89,12 +88,12 @@ class LoRA(nn.Module):
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
                 nn.init.kaiming_uniform_(self.lora_B, a=math.sqrt(5))
             else:
-                raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
+                raise ValueError(f"Unknown init_weights type: {config.init_weights}")
 
     def com(self, weights: torch.Tensor, added: torch.Tensor, gating=None) -> torch.Tensor:
         """Performs the composition operation between existing and injected weights."""
         if gating is None:
-            gating =  1.0
+            gating = 1.0
         
         if self.composition_mode == "add":
             return weights + added * gating * self.scaling
@@ -119,7 +118,6 @@ class LoRALayer(AdapterLayerBase):
         self.location_key = location_key + "_lora"
         self.config = config
         self.loras = nn.ModuleDict(dict())
-
         self.merged = False
 
     def get_n_heads(self, lora: Union[LoRA, LoRAConfig]):
@@ -169,10 +167,7 @@ class LoRALayer(AdapterLayerBase):
                         param.requires_grad = True
 
     def get_adapter(self, adapter_name: str) -> nn.Module:
-        if adapter_name in self.loras:
-            return self.loras[adapter_name]
-        else:
-            return None
+        return self.loras.get(adapter_name, None)
 
 
 class Linear(LoRALayer, nn.Linear):
@@ -200,7 +195,8 @@ class Linear(LoRALayer, nn.Linear):
         if no_init_bias and "bias" not in kwargs:
             kwargs["bias"] = False
         LoRALayer.__init__(self, location_key, config, in_features, out_features, **kwargs)
-
+        nn.Linear.__init__(self, in_features, out_features, **kwargs)  # Added to properly initialize nn.Linear
+        
         self.attn_key = attn_key
         self.fan_in_fan_out = fan_in_fan_out
         if fan_in_fan_out:
@@ -220,28 +216,23 @@ class Linear(LoRALayer, nn.Linear):
 
         if self.merged:
             lora = self.loras[self.merged]
-            # Make sure that the weights are not merged
             if lora.r > 0:
                 if lora.composition_mode == "scale":
-                    
                     delta_w = T(lora.lora_B)
                     if lora.is_dora:
                         delta_w = delta_w * lora.lora_alpha
                         norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                         unit_w = delta_w / norm_w
                         delta_w = unit_w * lora.m * (lora.scaling + 1e-9)
-
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
                     if lora.is_dora:
                         delta_w = lora.lora_alpha * delta_w
                         mult = T(lora.lora_C)
-                        X_plus_AB = (self.weight.data + delta_w) 
+                        X_plus_AB = self.weight.data + delta_w
                         X_plus_AB_times_C = X_plus_AB * mult
                         result = X_plus_AB_times_C * lora.scaling
                         return result
-                        #direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                        #delta_w = direction * lora.m
                 self.weight.data = lora.com_inv(self.weight.data, delta_w)
             self.merged = None
 
@@ -250,7 +241,6 @@ class Linear(LoRALayer, nn.Linear):
             return torch.t(w) if self.fan_in_fan_out else w
 
         weight = self.weight
-        # Merge the weights and mark it
         if lora.r > 0:
             if lora.composition_mode == "scale":
                 delta_w = T(lora.lora_B)
@@ -259,19 +249,15 @@ class Linear(LoRALayer, nn.Linear):
                     norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                     unit_w = delta_w / norm_w
                     delta_w = unit_w * lora.m * (lora.scaling + 1e-9)
-                
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
                 if lora.is_dora:
                     delta_w = lora.lora_alpha * delta_w
                     mult = T(lora.lora_C)
-                    X_plus_AB = (weight + delta_w) 
+                    X_plus_AB = weight + delta_w
                     X_plus_AB_times_C = X_plus_AB * mult
                     result = X_plus_AB_times_C * lora.scaling
                     return result
-                #if lora.is_dora:
-                #    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                #    delta_w = direction * lora.m
             weight = lora.com(weight, delta_w, gating=scaling)
 
         return weight
@@ -298,7 +284,6 @@ class Linear(LoRALayer, nn.Linear):
             if adapter_setup is not None:
                 if len(adapter_setup) == 1:
                     lora = self.loras[adapter_setup[0]]
-                    # result shape: <batch_size> x <seq_len> x <head_dim>
                     if lora.dynamic_scaling == "input_dependent":
                         lora.scaling = x.norm(p=2, dim=-1, keepdim=True)
                     result = F.linear(x, T(self.weight), bias=self.bias)
@@ -310,9 +295,6 @@ class Linear(LoRALayer, nn.Linear):
                         else:
                             gate = 1.0
                         if lora.composition_mode == "scale":
-
-                            
-                           
                             if lora.is_dora:
                                 delta_w = lora.lora_alpha * T(lora.lora_B)
                                 norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
@@ -320,28 +302,19 @@ class Linear(LoRALayer, nn.Linear):
                                 delta_w = unit_w * lora.m * (lora.scaling + 1e-9)
                             else:
                                 delta_w = T(lora.lora_B)
-                                
                             delta_w = delta_w.view(1, 1, -1)
                         else:
-                            delta_w = lora.lora_alpha*(lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
-                            
+                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             if lora.is_dora:
                                 mult = lora.lora_C.view(1, 1, -1)
-                                X_plus_AB = result + delta_w 
+                                X_plus_AB = result + delta_w
                                 X_plus_AB_times_C = X_plus_AB * mult
                                 result = X_plus_AB_times_C * lora.scaling * gate
                                 return result
-                                #direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                                
-                                #delta_w = direction * lora.m
-                                
-
-
                         result = lora.com(result, delta_w, gating=gate)
                     return result
                 else:
                     raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with LoRA.")
-
         return F.linear(x, T(self.weight), bias=self.bias)
 
 
