@@ -232,13 +232,12 @@ class Linear(LoRALayer, nn.Linear):
                 if lora.composition_mode == "scale":
                     
                     delta_w = T(lora.lora_B)
-                    norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
-                    unit_w = delta_w / norm_w
-                    direction = delta_w * unit_w
                     if lora.is_dora:
-                        delta_w = lora.m * direction * (lora.scaling * lora.lora_alpha + 1e-9)
-                    else:
-                        delta_w = direction * lora.scaling * lora.lora_alpha
+                        delta_w = delta_w * lora.lora_alpha
+                        norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
+                        unit_w = delta_w / norm_w
+                        delta_w = unit_w * lora.m * (lora.scaling + 1e-9)
+
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
                     if lora.is_dora:
@@ -256,16 +255,16 @@ class Linear(LoRALayer, nn.Linear):
         if lora.r > 0:
             if lora.composition_mode == "scale":
                 delta_w = T(lora.lora_B)
-                norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
-                unit_w = delta_w / norm_w
-                direction = delta_w * unit_w
                 if lora.is_dora:
-                    delta_w = lora.m *direction * (lora.scaling * lora.lora_alpha + 1e-9)
-                else:
-                    delta_w = direction * lora.scaling * lora.lora_alpha
+                    delta_w = delta_w * lora.lora_alpha
+                    norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
+                    unit_w = delta_w / norm_w
+                    delta_w = unit_w * lora.m * (lora.scaling + 1e-9)
+                
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
                 if lora.is_dora:
+                    delta_w = lora.lora_alpha * delta_w
                     mult = T(lora.lora_C)
                     X_plus_AB = (weight + delta_w) 
                     X_plus_AB_times_C = X_plus_AB * mult
@@ -316,17 +315,12 @@ class Linear(LoRALayer, nn.Linear):
                             
                            
                             if lora.is_dora:
-                                delta_w = T(lora.lora_B)
+                                delta_w = lora.lora_alpha * T(lora.lora_B)
                                 norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                                 unit_w = delta_w / norm_w
-                                direction = delta_w * unit_w
-                                delta_w = lora.m * direction * (lora.scaling * lora.lora_alpha + 1e-9)
+                                delta_w = unit_w * lora.m * (lora.scaling + 1e-9)
                             else:
-                                delta_w = x @ torch.t(lora.lora_B)
-                                norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
-                                unit_w = delta_w / norm_w
-                                direction = delta_w * unit_w
-                                delta_w = direction * lora.scaling * lora.lora_alpha   
+                                delta_w = T(lora.lora_B)
                                 
                             delta_w = delta_w.view(1, 1, -1)
                         else:
@@ -334,7 +328,7 @@ class Linear(LoRALayer, nn.Linear):
                             
                             if lora.is_dora:
                                 mult = lora.lora_C.view(1, 1, -1)
-                                X_plus_AB = (result + delta_w) 
+                                X_plus_AB = result + delta_w 
                                 X_plus_AB_times_C = X_plus_AB * mult
                                 result = X_plus_AB_times_C * lora.scaling * gate
                                 return result
