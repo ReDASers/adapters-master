@@ -70,8 +70,8 @@ class LoRA(nn.Module):
                 self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
-                self.m = nn.Linear(lora_B_shape[0], lora_B_shape[0])
-                nn.init.uniform_(self.m.weight, a=0.98, b=1.02)
+                self.m = nn.Parameter(torch.zeros(lora_B_shape))
+                nn.init.uniform_(self.m, a=0.98, b=1.02)
 
 
             if config.init_weights == "lora":
@@ -298,15 +298,19 @@ class Linear(LoRALayer, nn.Linear):
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
 
-                            delta_w = T(lora.lora_B)
-
+                            
+                           
                             if lora.is_dora:
+                                delta_w = T(lora.lora_B)
                                 norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                                 unit_w = delta_w / norm_w
                                 direction = delta_w * unit_w
                                 delta_w = lora.m(direction) * (lora.scaling * lora.lora_alpha + 1e-9)
                             else:
-                                delta_w = x*delta_w
+                                delta_w = x @ lora.lora_B
+                                norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
+                                unit_w = delta_w / norm_w
+                                direction = delta_w * unit_w
                                 delta_w = direction * lora.scaling * lora.lora_alpha   
                                 
                             delta_w = delta_w.view(1, 1, -1)
