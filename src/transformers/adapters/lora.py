@@ -237,7 +237,7 @@ class Linear(LoRALayer, nn.Linear):
                         norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                         unit_w = delta_w / norm_w
                         direction = delta_w * unit_w
-                        delta_w = direction * lora.m * (lora.scaling * lora.lora_alpha + 1e-9)
+                        delta_w = lora.m(direction) * (lora.scaling * lora.lora_alpha + 1e-9)
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
                     if lora.is_dora:
@@ -259,7 +259,7 @@ class Linear(LoRALayer, nn.Linear):
                     norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                     unit_w = delta_w / norm_w
                     direction = delta_w * unit_w
-                    delta_w = direction * lora.m * (lora.scaling * lora.lora_alpha + 1e-9)
+                    delta_w = lora.m(direction) * (lora.scaling * lora.lora_alpha + 1e-9)
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
                 if lora.is_dora:
@@ -304,7 +304,7 @@ class Linear(LoRALayer, nn.Linear):
                             direction = delta_w * unit_w
                             if lora.is_dora:
                                 
-                                delta_w = direction * lora.m * (lora.scaling * lora.lora_alpha + 1e-9)
+                                delta_w = lora.m(direction) * (lora.scaling * lora.lora_alpha + 1e-9)
                             else:
                                 delta_w = direction * lora.scaling * lora.lora_alpha   
                                 
