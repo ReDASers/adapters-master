@@ -233,11 +233,13 @@ class Linear(LoRALayer, nn.Linear):
                 if lora.composition_mode == "scale":
                     
                     delta_w = T(lora.lora_B)
+                    norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
+                    unit_w = delta_w / norm_w
+                    direction = delta_w * unit_w
                     if lora.is_dora:
-                        norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
-                        unit_w = delta_w / norm_w
-                        direction = delta_w * unit_w
-                        delta_w = lora.m(direction) * (lora.scaling * lora.lora_alpha + 1e-9)
+                        delta_w = lora.m * direction * (lora.scaling * lora.lora_alpha + 1e-9)
+                    else:
+                        delta_w = direction * lora.scaling * lora.lora_alpha
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
                     if lora.is_dora:
@@ -255,11 +257,13 @@ class Linear(LoRALayer, nn.Linear):
         if lora.r > 0:
             if lora.composition_mode == "scale":
                 delta_w = T(lora.lora_B)
+                norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
+                unit_w = delta_w / norm_w
+                direction = delta_w * unit_w
                 if lora.is_dora:
-                    norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
-                    unit_w = delta_w / norm_w
-                    direction = delta_w * unit_w
-                    delta_w = lora.m(direction) * (lora.scaling * lora.lora_alpha + 1e-9)
+                    delta_w = lora.m *direction * (lora.scaling * lora.lora_alpha + 1e-9)
+                else:
+                    delta_w = direction * lora.scaling * lora.lora_alpha
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
                 if lora.is_dora:
@@ -305,9 +309,9 @@ class Linear(LoRALayer, nn.Linear):
                                 norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                                 unit_w = delta_w / norm_w
                                 direction = delta_w * unit_w
-                                delta_w = lora.m(direction) * (lora.scaling * lora.lora_alpha + 1e-9)
+                                delta_w = lora.m * direction * (lora.scaling * lora.lora_alpha + 1e-9)
                             else:
-                                delta_w = x @ lora.lora_B
+                                delta_w = lora.lora_dropout(x) @ lora.lora_B
                                 norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                                 unit_w = delta_w / norm_w
                                 direction = delta_w * unit_w
