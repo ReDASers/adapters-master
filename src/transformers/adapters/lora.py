@@ -63,6 +63,8 @@ class LoRA(nn.Module):
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
                 self.lora_alpha = self.lora_alpha / self.r if not self.is_dora else self.lora_alpha / math.sqrt(self.r)
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
+            if self.is_dora:
+                self.lora_C = nn.Parameter(torch.zeros((lora_B_shape[0], 1)))
 
             if self.use_gating:
                 if self.is_dora:
@@ -78,7 +80,7 @@ class LoRA(nn.Module):
                 # initialize A the same way as the default for nn.Linear and B to zero
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-                nn.init.kaiming_normal_(self.lora_B, mode="fan_out", nonlinearity="relu")
+                nn.init.kaiming_uniform_(self.lora_B,a=math.sqrt(5))
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
@@ -87,15 +89,12 @@ class LoRA(nn.Module):
                 if self.composition_mode == "add":
                     nn.init.ones_(self.lora_A)
                 nn.init.ones_(self.lora_B)
-            elif config.init_weights == "norm":
-                if self.composition_mode == "add":
-                    nn.init.ones_(self.lora_A)
-                nn.init.normal_(self.lora_B, mean=1.0, std=1.0)
             elif config.init_weights == "prexia":
                 if self.composition_mode == "add":
-                    nn.init.normal_(self.lora_A, std=0.02)
-                nn.init.normal_(self.lora_B, mean=1.0, std=math.sqrt(2.0 / lora_B_shape[0]))
-                self.lora_B.data = self.lora_B.data.norm(p=2, dim=-1, keepdim=True)
+                    nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+                nn.init.kaiming_uniform_(self.lora_B, a=math.sqrt(5))
+                if self.is_dora:
+                    nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
             else:
                 raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
 
@@ -105,7 +104,7 @@ class LoRA(nn.Module):
             gating =  1.0
         
         if self.composition_mode == "add":
-            return weights + added * gating * self.scaling * self.lora_alpha
+            return weights + added * gating * self.scaling
         elif self.composition_mode == "scale":
             return weights * (added * gating)
         else:
@@ -114,7 +113,7 @@ class LoRA(nn.Module):
     def com_inv(self, weights: torch.Tensor, added: torch.Tensor) -> torch.Tensor:
         """Inverts the composition operation between existing and injected weights."""
         if self.composition_mode == "add":
-            return weights - added * self.scaling * self.lora_alpha
+            return weights - added * self.scaling
         elif self.composition_mode == "scale":
             return weights / (added)
         else:
@@ -267,8 +266,14 @@ class Linear(LoRALayer, nn.Linear):
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
                 if lora.is_dora:
-                    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                    delta_w = direction * lora.m
+                    mult = T(lora.lora_C)
+                    X_plus_AB = (weight + delta_w) 
+                    X_plus_AB_times_C = X_plus_AB * mult
+                    result = X_plus_AB_times_C * lora.scaling
+                    return result
+                #if lora.is_dora:
+                #    direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                #    delta_w = direction * lora.m
             weight = lora.com(weight, delta_w, gating=scaling)
 
         return weight
@@ -300,6 +305,12 @@ class Linear(LoRALayer, nn.Linear):
                         lora.scaling = x.norm(p=2, dim=-1, keepdim=True)
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     if lora.r > 0:
+                        if lora.use_gating:
+                            gate = torch.sigmoid(lora.gate(x))
+                            gate = torch.mean(gate, dim=1).unsqueeze(-1)
+                            self._store_gating_score(adapter_setup[0], gate)
+                        else:
+                            gate = 1.0
                         if lora.composition_mode == "scale":
 
                             
@@ -319,20 +330,20 @@ class Linear(LoRALayer, nn.Linear):
                                 
                             delta_w = delta_w.view(1, 1, -1)
                         else:
-                            delta_w = lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B)
+                            delta_w = lora.lora_alpha*(lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             
                             if lora.is_dora:
-                                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                                mult = lora.lora_C.view(1, 1, -1)
+                                X_plus_AB = (result + delta_w) 
+                                X_plus_AB_times_C = X_plus_AB * mult
+                                result = X_plus_AB_times_C * lora.scaling * gate
+                                return result
+                                #direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                                 
-                                delta_w = direction * lora.m
+                                #delta_w = direction * lora.m
                                 
 
-                        if lora.use_gating:
-                            gate = torch.sigmoid(lora.gate(x))
-                            gate = torch.mean(gate, dim=1).unsqueeze(-1)
-                            self._store_gating_score(adapter_setup[0], gate)
-                        else:
-                            gate = None
+
                         result = lora.com(result, delta_w, gating=gate)
                     return result
                 else:
