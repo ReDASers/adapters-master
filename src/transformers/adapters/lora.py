@@ -65,11 +65,13 @@ class LoRA(nn.Module):
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
 
             if self.use_gating:
+                if self.is_dora:
+                    self.gate = nn.Linear(lora_B_shape[0], gating_heads)
                 self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
-                nn.init.normal_(self.gate.weight, mean=0.5, std=0.02)
+                nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
-                self.m = nn.Linear(1, lora_B_shape[0])
-                nn.init.uniform_(self.m.data, a=0.98, std=1.02)
+                self.m = nn.Linear(lora_B_shape[0], lora_B_shape[0])
+                nn.init.uniform_(self.m.weight, a=0.98, std=1.02)
 
 
             if config.init_weights == "lora":
@@ -235,7 +237,7 @@ class Linear(LoRALayer, nn.Linear):
                         norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                         unit_w = delta_w / norm_w
                         direction = delta_w * unit_w
-                        delta_w = direction *(lora.scaling * lora.lora_alpha + 1e-9)
+                        delta_w = direction * lora.m * (lora.scaling * lora.lora_alpha + 1e-9)
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
                     if lora.is_dora:
@@ -257,7 +259,7 @@ class Linear(LoRALayer, nn.Linear):
                     norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
                     unit_w = delta_w / norm_w
                     direction = delta_w * unit_w
-                    delta_w = direction *(lora.scaling * lora.lora_alpha + 1e-9)
+                    delta_w = direction * lora.m * (lora.scaling * lora.lora_alpha + 1e-9)
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
                 if lora.is_dora:
@@ -302,7 +304,7 @@ class Linear(LoRALayer, nn.Linear):
                             direction = delta_w * unit_w
                             if lora.is_dora:
                                 
-                                delta_w = direction * torch.t(lora.m) * (lora.scaling * lora.lora_alpha + 1e-9)
+                                delta_w = direction * lora.m * (lora.scaling * lora.lora_alpha + 1e-9)
                             else:
                                 delta_w = direction * lora.scaling * lora.lora_alpha   
                                 
