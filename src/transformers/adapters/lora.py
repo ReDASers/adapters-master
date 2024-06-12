@@ -43,7 +43,8 @@ class LoRA(nn.Module):
                 self.scaling = torch.tensor(self.scaling)
             self.dynamic_scaling =  "fixed"
         elif config["scaling"] == "learnable":
-            self.scaling = nn.Parameter(torch.ones(1, requires_grad=True))
+            self.scaling = nn.Parameter(torch.ones(1))
+            nn.init.ones_(self.scaling.data)
             self.dynamic_scaling  =  "learnable"
         elif config["scaling"] == "input_dependent":
             self.scaling = torch.tensor(1.0)
@@ -92,10 +93,7 @@ class LoRA(nn.Module):
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
                 nn.init.normal_(self.lora_B, mean=1.0, std=math.sqrt(2.0 / lora_B_shape[0]))
-            elif config.init_weights == "xavier":
-                if self.composition_mode == "add":
-                    nn.init.xavier_uniform_(self.lora_A)
-                nn.init.xavier_uniform_(self.lora_B, gain=2.0)
+                self.lora_B.data = self.lora_B.data.norm(p=2, dim=-1, keepdim=True)
             else:
                 raise ValueError("Unknown init_weights type: {}".format(config.init_weights))
 
@@ -107,7 +105,7 @@ class LoRA(nn.Module):
         if self.composition_mode == "add":
             return weights + added * gating * self.scaling * self.lora_alpha
         elif self.composition_mode == "scale":
-            return weights * (added * gating * self.scaling * self.lora_alpha)
+            return weights * (added * gating)
         else:
             raise ValueError("Invalid composition mode.")
 
@@ -116,7 +114,7 @@ class LoRA(nn.Module):
         if self.composition_mode == "add":
             return weights - added * self.scaling * self.lora_alpha
         elif self.composition_mode == "scale":
-            return weights / (added * self.scaling * self.lora_alpha)
+            return weights / (added)
         else:
             raise ValueError("Invalid composition mode.")
 
@@ -231,9 +229,13 @@ class Linear(LoRALayer, nn.Linear):
             # Make sure that the weights are not merged
             if lora.r > 0:
                 if lora.composition_mode == "scale":
+                    
                     delta_w = T(lora.lora_B)
                     if lora.is_dora:
-                        delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                        norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
+                        unit_w = delta_w / norm_w
+                        direction = delta_w * unit_w
+                        delta_w = direction *(lora.scaling * lora.lora_alpha + 1e-9)
                 else:
                     delta_w = T(lora.lora_B @ lora.lora_A)
                     if lora.is_dora:
@@ -252,7 +254,10 @@ class Linear(LoRALayer, nn.Linear):
             if lora.composition_mode == "scale":
                 delta_w = T(lora.lora_B)
                 if lora.is_dora:
-                    delta_w = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                    norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
+                    unit_w = delta_w / norm_w
+                    direction = delta_w * unit_w
+                    delta_w = direction *(lora.scaling * lora.lora_alpha + 1e-9)
             else:
                 delta_w = T(lora.lora_B @ lora.lora_A)
                 if lora.is_dora:
@@ -291,14 +296,13 @@ class Linear(LoRALayer, nn.Linear):
                     if lora.r > 0:
                         if lora.composition_mode == "scale":
 
-                            delta_w = lora.lora_B
+                            delta_w = T(lora.lora_B)
                             
                             if lora.is_dora:
-                                
-                                direction = delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                                
-                                delta_w = delta_w * direction
-                                delta_w = delta_w * torch.t(lora.m)
+                                norm_w = delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9
+                                unit_w = delta_w / norm_w
+                                direction = delta_w * unit_w
+                                delta_w = direction *(lora.scaling * lora.lora_alpha + 1e-9)
                                 
                                 
                             delta_w = delta_w.view(1, 1, -1)
