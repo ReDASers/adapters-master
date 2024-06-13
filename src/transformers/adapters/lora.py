@@ -63,7 +63,7 @@ class LoRA(nn.Module):
                 self.gate = nn.Linear(lora_B_shape[0], gating_heads)
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
-                self.m = nn.Parameter(torch.zeros(lora_B_shape))
+                self.m = nn.Parameter(torch.zeros(lora_B_shape[0])) 
                 nn.init.uniform_(self.m, a=0.98, b=1.02)
                 
 
@@ -305,14 +305,12 @@ class Linear(LoRALayer, nn.Linear):
                             delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             mult = lora.lora_C.view(1, 1, -1)
                             if lora.is_dora:
-                                X_plus_AB = result + delta_w
-                                X_plus_AB_times_C = X_plus_AB * mult
-                                result = X_plus_AB_times_C * lora.scaling * gate
+                                result = result + delta_w * mult * lora.scaling
+                                result = result * gate
                                 return result
                             else:
-                                X_times_C = result * mult
-                                X_times_C_plusAB = X_times_C + delta_w
-                                result = X_times_C_plusAB * lora.scaling * gate
+                                result = result * mult + delta_w * lora.scaling
+                                result = result * gate
                                 return result
                         result = lora.com(result, delta_w, gating=gate)
                     return result
