@@ -64,7 +64,7 @@ class LoRA(nn.Module):
                 nn.init.normal_(self.gate.weight, std=0.02)
             
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
-            nn.init.ones_(self.m)
+            nn.init.normal_(self.m, mean=1.0, std=0.02)
                 
 
             # Initialize weights
@@ -303,15 +303,16 @@ class Linear(LoRALayer, nn.Linear):
                             delta_w = delta_w.view(1, 1, -1)
                         else:
                             delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            delta_w = delta_w/ (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
                             mult = lora.lora_C.view(1, 1, -1)
                             if lora.is_dora:
-                                result = (result + delta_w) * mult * lora.scaling
-                                result = result * gate
+                                result = (result + delta_w) * mult
+                                #result = result * gate
                                 return result
                             else:
                                 
-                                result = result * mult + lora.m * (delta_w / (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)) 
-                                result = result * lora.scaling * gate
+                                result = result * mult + lora.m * delta_w
+                                #result = result * lora.scaling * gate
                                 return result
                         result = lora.com(result, delta_w, gating=gate)
                     return result
