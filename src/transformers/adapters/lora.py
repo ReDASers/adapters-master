@@ -56,16 +56,16 @@ class LoRA(nn.Module):
                 self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
                 self.lora_alpha /= self.r if not self.is_dora else math.sqrt(self.r)
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
-            
+            self.lora_C = nn.Parameter(torch.zeros((lora_B_shape[0], 1)))
+            #nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
+            nn.init.ones_(self.lora_C)
             if self.use_gating:
                 self.gate = nn.Linear(lora_B_shape[0], gating_heads)
                 nn.init.normal_(self.gate.weight, std=0.02)
             if self.is_dora:
                 self.m = nn.Parameter(torch.zeros(lora_B_shape))
                 nn.init.uniform_(self.m, a=0.98, b=1.02)
-                self.lora_C = nn.Parameter(torch.zeros((lora_B_shape[0], 1)))
-                #nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
-                nn.init.ones_(self.lora_C)
+                
 
             # Initialize weights
             if config.init_weights == "lora":
@@ -75,19 +75,19 @@ class LoRA(nn.Module):
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
-                nn.init.normal_(self.lora_B, std=0.02)
+                nn.init.zeros_(self.lora_B)
             elif config.init_weights == "ia3":
                 if self.composition_mode == "add":
-                    nn.init.ones_(self.lora_A)
+                    nn.init.normal_(self.lora_A, mean=1.0, std=0.02)
                 nn.init.ones_(self.lora_B)
             elif config.init_weights == "xavier":
                 if self.composition_mode == "add":
                     nn.init.xavier_uniform_(self.lora_A)
-                nn.init.xavier_uniform_(self.lora_B)
+                nn.init.zeros_(self.lora_B)
             elif config.init_weights == "prexia":
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-                nn.init.kaiming_uniform_(self.lora_B, a=math.sqrt(5))
+                nn.init.ones_(self.lora_B)
             else:
                 raise ValueError(f"Unknown init_weights type: {config.init_weights}")
 
