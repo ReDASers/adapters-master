@@ -50,14 +50,16 @@ class LoRA(nn.Module):
         
         # Initialize trainable parameters
         if self.r > 0:
+            std_dev = 1 / torch.sqrt(torch.tensor(self.r).float())
+       
             if self.lora_alpha is None or self.lora_alpha == 0:
                 self.lora_alpha = 1.0
             if self.composition_mode == "add":
-                self.lora_A = nn.Parameter(torch.zeros(lora_A_shape))
+                self.lora_A = nn.Parameter(torch.randn(lora_A_shape) * std_dev)
                 self.lora_alpha /= self.r if not self.is_dora else math.sqrt(self.r)
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
-            self.lora_C = nn.Parameter(torch.zeros((lora_B_shape[0], 1)))
-            nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
+            self.lora_C = nn.Parameter(torch.ones((lora_B_shape[0], 1)))
+            #nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
             #nn.init.ones_(self.lora_C)
             if self.use_gating:
                 self.gate = nn.Linear(lora_B_shape[0], gating_heads)
@@ -85,9 +87,7 @@ class LoRA(nn.Module):
                     nn.init.xavier_uniform_(self.lora_A)
                 nn.init.zeros_(self.lora_B)
             elif config.init_weights == "prexia":
-                if self.composition_mode == "add":
-                    nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-                nn.init.ones_(self.lora_B)
+                nn.init.zeros_(self.lora_B)
             else:
                 raise ValueError(f"Unknown init_weights type: {config.init_weights}")
 
@@ -303,7 +303,7 @@ class Linear(LoRALayer, nn.Linear):
                             delta_w = delta_w.view(1, 1, -1)
                         else:
                             delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
-                            delta_w = lora.m * delta_w/ (delta_w.norm(p=2, dim=-1, keepdim=True) + 1e-9)
+                            delta_w = lora.m * delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             mult = lora.lora_C.view(1, 1, -1)
                             if lora.is_dora:
                                 result = (result + delta_w) * mult
