@@ -202,7 +202,7 @@ class Linear(LoRALayer, nn.Linear):
         if no_init_bias and "bias" not in kwargs:
             kwargs["bias"] = False
         LoRALayer.__init__(self, location_key, config, in_features, out_features, **kwargs)
-        
+        self.n_passes = 0
         self.attn_key = attn_key
         self.fan_in_fan_out = fan_in_fan_out
         if fan_in_fan_out:
@@ -308,9 +308,15 @@ class Linear(LoRALayer, nn.Linear):
                                 delta_w = T(lora.lora_B)
                             delta_w = delta_w.view(1, 1, -1)
                         else:
-                            delta_w = lora.lora_alpha * (lora.lora_dropout(lora.f(x)) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
-                            delta_w = lora.m * delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
+                            fx = lora.f(x)
                             mult = lora.lora_C.view(1, 1, -1)
+                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            if self.n_passes % 100 == 0:
+                                print("x ", x.shape, "fx ", fx.shape, "a ", lora.lora_A.shape, "b ", 
+                                    lora.lora_B.shape, "c ", lora.lora_C.shape, "delta_w ", delta_w.shape)
+                            self.n_passes += 1
+                            delta_w = lora.m * delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
+                            
                             if lora.is_dora:
                                 result = (result + delta_w) * mult
                                 #result = result * gate
