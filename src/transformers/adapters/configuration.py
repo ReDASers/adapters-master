@@ -478,7 +478,7 @@ class LoRAConfig(AdapterConfigBase):
     use_gating: bool = False
     is_dora: bool = False
     scaling: Union[float, str] = "learnable"
-    nonlinearity: str = "prelu"
+    non_linearity: str = "prelu"
 
 @dataclass(eq=False)
 class IA3Config(LoRAConfig):
