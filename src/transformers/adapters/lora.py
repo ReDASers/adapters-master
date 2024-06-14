@@ -62,17 +62,19 @@ class LoRA(nn.Module):
                 )
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.randn(lora_A_shape) * std_dev)
-                self.lora_alpha /= self.r if not self.is_dora else math.sqrt(self.r)
+            self.lora_alpha = self.lora_alpha/math.sqrt(self.r) 
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
             self.lora_C = nn.Parameter(torch.ones((lora_B_shape[0], 1)))
             #nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
-            #nn.init.ones_(self.lora_C)
+            nn.init.zeros_(self.lora_B)
+            nn.init.ones_(self.lora_C)
             if self.use_gating:
                 self.gate = nn.Linear(lora_B_shape[0], gating_heads)
-                nn.init.normal_(self.gate.weight, std=0.02)
+                nn.init.normal_(self.gate.weight, mean=0.5, std=std_dev)
             
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
-            nn.init.normal_(self.m, mean=1.0, std=0.02)
+            nn.init.ones_(self.m)
+            #nn.init.normal_(self.m, mean=1.0, std=0.02)
                 
 
             # Initialize weights
@@ -80,20 +82,25 @@ class LoRA(nn.Module):
                 if self.composition_mode == "add":
                     nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
                 nn.init.zeros_(self.lora_B)
+                nn.init.ones_(self.lora_C)
             elif config.init_weights == "bert":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, std=0.02)
-                nn.init.zeros_(self.lora_B)
+                nn.init.normal_(self.lora_B, std=0.02)
+                nn.init.normal_(self.lora_C, mean=1.0, std=0.02)
             elif config.init_weights == "ia3":
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, mean=1.0, std=0.02)
                 nn.init.ones_(self.lora_B)
+                nn.init.uniform_(self.lora_C, mean=1.0, std=0.02)
             elif config.init_weights == "xavier":
                 if self.composition_mode == "add":
                     nn.init.xavier_uniform_(self.lora_A)
                 nn.init.zeros_(self.lora_B)
+                nn.init.ones_(self.lora_C)
             elif config.init_weights == "prexia":
                 nn.init.zeros_(self.lora_B)
+                nn.init.ones_(self.lora_C)
             else:
                 raise ValueError(f"Unknown init_weights type: {config.init_weights}")
 
@@ -308,18 +315,18 @@ class Linear(LoRALayer, nn.Linear):
                                 delta_w = T(lora.lora_B)
                             delta_w = delta_w.view(1, 1, -1)
                         else:
-                            fx = lora.f(x)
+                            fx = lora.lora_alpha * lora.scaling * lora.f(x)
                             mult = lora.lora_C.view(1, 1, -1)
                             delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             delta_w = lora.m * delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
                             if lora.is_dora:
-                                result = result + fx * mult
+                                result = result + fx * mult * gate
                                 #result = result * gate
                                 return result
                             else:
                                 
-                                result = result * fx * mult
+                                result = result * fx * mult * gate
                                 #result = result * lora.scaling * gate
                                 return result
                         result = lora.com(result, delta_w, gating=gate)
