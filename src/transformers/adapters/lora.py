@@ -58,7 +58,7 @@ class LoRA(nn.Module):
             self.f = nn.Sequential(
                     nn.Linear(lora_A_shape[1], self.r),
                     Activation_Function_Class(config.non_linearity.lower()),
-                    nn.Linear(self.r, lora_B_shape[0]),
+                    nn.Linear(self.r, lora_A_shape[1]),
                 )
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.randn(lora_A_shape) * std_dev)
@@ -317,16 +317,16 @@ class Linear(LoRALayer, nn.Linear):
                         else:
                             #fx = lora.lora_alpha * lora.scaling * lora.f(lora.lora_dropout(x))
                             mult = lora.lora_C.view(1, 1, -1)
-                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            delta_w = lora.lora_alpha * (lora.f(lora.lora_dropout(x)) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             dora = lora.m * delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
                             if lora.is_dora:
-                                result = result + lora.f(dora)
+                                result = result + dora
                                 #result = result * gate
                                 return result
                             else:
                                 
-                                result = result * (lora.f(lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))) * mult
+                                result = result * (lora.f(lora.lora_dropout(x) @ torch.t(lora.lora_A)) @ torch.t(lora.lora_B)) * mult
                                 #result = result * lora.scaling * gate
                                 return result
                         result = lora.com(result, delta_w, gating=gate)
