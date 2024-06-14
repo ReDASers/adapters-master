@@ -9,6 +9,7 @@ from ..configuration_utils import PretrainedConfig
 from .composition import AdapterCompositionBlock
 from .configuration import LoRAConfig
 from .layer import AdapterLayerBase
+from .modeling import Activation_Function_Class
 
 
 class LoRA(nn.Module):
@@ -54,6 +55,11 @@ class LoRA(nn.Module):
        
             if self.lora_alpha is None or self.lora_alpha == 0:
                 self.lora_alpha = 1.0
+            self.f = nn.Sequential(
+                    nn.Linear(lora_A_shape[1], self.r),
+                    Activation_Function_Class(config.non_linearity.lower()),
+                    nn.Linear(self.r, lora_B_shape[0]),
+                )
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.randn(lora_A_shape) * std_dev)
                 self.lora_alpha /= self.r if not self.is_dora else math.sqrt(self.r)
@@ -302,7 +308,7 @@ class Linear(LoRALayer, nn.Linear):
                                 delta_w = T(lora.lora_B)
                             delta_w = delta_w.view(1, 1, -1)
                         else:
-                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            delta_w = lora.lora_alpha * (lora.lora_dropout(lora.f(x)) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             delta_w = lora.m * delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             mult = lora.lora_C.view(1, 1, -1)
                             if lora.is_dora:
