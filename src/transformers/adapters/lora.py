@@ -60,7 +60,7 @@ class LoRA(nn.Module):
                     Activation_Function_Class(config.non_linearity.lower()),
                     nn.Linear(self.r, self.r),
                     Activation_Function_Class(config.non_linearity.lower()),
-                    nn.Linear(self.r, lora_B_shape[0]),
+                    nn.Linear(self.r, lora_A_shape[1]),
                 )
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.randn(lora_A_shape) * std_dev)
