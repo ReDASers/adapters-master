@@ -56,9 +56,11 @@ class LoRA(nn.Module):
             if self.lora_alpha is None or self.lora_alpha == 0:
                 self.lora_alpha = 1.0
             self.f = nn.Sequential(
-                    nn.Linear(lora_A_shape[1], self.r),
+                    nn.Linear(lora_B_shape[0], self.r),
                     Activation_Function_Class(config.non_linearity.lower()),
-                    nn.Linear(self.r, lora_A_shape[1]),
+                    nn.Linear(self.r, self.r),
+                    Activation_Function_Class(config.non_linearity.lower()),
+                    nn.Linear(self.r, lora_B_shape[0]),
                 )
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.randn(lora_A_shape) * std_dev)
@@ -321,7 +323,7 @@ class Linear(LoRALayer, nn.Linear):
                             dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
                             if lora.is_dora:
-                                result = result * mult + dora * lora.scaling
+                                result = result + dora * lora.m
                                 #result = result * gate
                                 return result
                             else:
