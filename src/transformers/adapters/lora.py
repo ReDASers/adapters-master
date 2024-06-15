@@ -328,7 +328,7 @@ class Linear(LoRALayer, nn.Linear):
                                 xA = lora.lora_dropout(x) @ torch.t(lora.lora_A)
                                 
                                 xAB = xA @ torch.t(lora.lora_B)
-                                fxAB = lora.f(lora.lora_alpha * lora.scaling * xAB)
+                                fxAB = lora.f(lora.lora_alpha * lora.m * xAB)
                                 result = result * mult + fxAB
                                 #result = result * lora.scaling * gate
                                 return result
