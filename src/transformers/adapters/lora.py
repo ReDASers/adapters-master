@@ -56,7 +56,7 @@ class LoRA(nn.Module):
             if self.lora_alpha is None or self.lora_alpha == 0:
                 self.lora_alpha = 1.0
             self.f = nn.Sequential(
-                    nn.Linear(lora_B_shape[0], self.r),
+                    nn.Linear(lora_A_shape[1], self.r),
                     Activation_Function_Class(config.non_linearity.lower()),
                     nn.Linear(self.r, self.r),
                     Activation_Function_Class(config.non_linearity.lower()),
@@ -331,7 +331,7 @@ class Linear(LoRALayer, nn.Linear):
                                 
                                 #xAB = xA @ torch.t(lora.lora_B)
                                 #fxAB = lora.f(lora.lora_alpha * lora.m * xAB)
-                                result = (result * mult + dora * lora.m) * lora.scaling
+                                result = (result + dora * lora.m) * mult
                                 #result = result * lora.scaling * gate
                                 return result
                         result = lora.com(result, delta_w, gating=gate)
