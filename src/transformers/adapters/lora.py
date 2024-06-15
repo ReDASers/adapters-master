@@ -321,7 +321,7 @@ class Linear(LoRALayer, nn.Linear):
                             dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
                             if lora.is_dora:
-                                result = result * mult + dora * lora.m + lora.scaling
+                                result = result * mult + dora * lora.scaling
                                 #result = result * gate
                                 return result
                             else:
