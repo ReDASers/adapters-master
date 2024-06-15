@@ -317,11 +317,11 @@ class Linear(LoRALayer, nn.Linear):
                         else:
                             #fx = lora.lora_alpha * lora.scaling * lora.f(lora.lora_dropout(x))
                             mult = lora.lora_C.view(1, 1, -1)
-                            delta_w = lora.lora_alpha * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            delta_w = lora.lora_alpha * (lora.f(lora.lora_dropout(x)) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
                             if lora.is_dora:
-                                result = result + lora.f(x)
+                                result = result*mult + lora.f(x)
                                 #result = result * gate
                                 return result
                             else:
@@ -329,7 +329,7 @@ class Linear(LoRALayer, nn.Linear):
                                 
                                 #xAB = xA @ torch.t(lora.lora_B)
                                 #fxAB = lora.f(lora.lora_alpha * lora.m * xAB)
-                                result = result * lora.f(x)
+                                result = result * mult + dora
                                 #result = result * lora.scaling * gate
                                 return result
                         result = lora.com(result, delta_w, gating=gate)
