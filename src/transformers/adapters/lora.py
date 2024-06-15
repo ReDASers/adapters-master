@@ -64,9 +64,12 @@ class LoRA(nn.Module):
                 )
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.randn(lora_A_shape) * std_dev)
+                print("A ",self.lora_A.shape)
             self.lora_alpha = self.lora_alpha/math.sqrt(self.r) 
             self.lora_B = nn.Parameter(torch.zeros(lora_B_shape))
+            print("B ", self.lora_B.shape)
             self.lora_C = nn.Parameter(torch.ones((lora_B_shape[0], 1)))
+            print("C ", self.lora_C.shape)
             #nn.init.normal_(self.lora_C, mean=1.0, std=math.sqrt(2.0 / self.lora_C.shape[0]))
             nn.init.zeros_(self.lora_B)
             nn.init.ones_(self.lora_C)
@@ -326,7 +329,7 @@ class Linear(LoRALayer, nn.Linear):
                             
                             if lora.is_dora:
                                 result = result * mult
-                                if lora.lora_A[1] == lora.lora_B[0]:
+                                if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
                                     result = result + dora * lora.m
                                 #result = result * gate
                                 return result
@@ -335,7 +338,7 @@ class Linear(LoRALayer, nn.Linear):
                                 
                                 #xAB = xA @ torch.t(lora.lora_B)
                                 #fxAB = lora.f(lora.lora_alpha * lora.m * xAB)
-                                if lora.lora_A[1] == lora.lora_B[0]:
+                                if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
                                     result = (result * mult + dora * lora.m) * lora.scaling
                                 else:
                                     result = result * mult
