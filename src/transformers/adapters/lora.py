@@ -320,7 +320,7 @@ class Linear(LoRALayer, nn.Linear):
                             #fx = lora.lora_alpha * lora.scaling * lora.f(lora.lora_dropout(x))
                             mult = lora.lora_C.view(1, 1, -1)
                             fx = lora.f(lora.lora_dropout(x))
-                            print(x.shape, fx.shape, lora.lora_A.shape, lora.lora_B.shape, mult.shape)
+                            #print(x.shape, fx.shape, lora.lora_A.shape, lora.lora_B.shape, mult.shape)
                             delta_w = lora.lora_alpha * (fx @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
