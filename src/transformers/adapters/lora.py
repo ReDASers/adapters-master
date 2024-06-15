@@ -92,7 +92,7 @@ class LoRA(nn.Module):
                 if self.composition_mode == "add":
                     nn.init.normal_(self.lora_A, mean=1.0, std=0.02)
                 nn.init.ones_(self.lora_B)
-                nn.init.uniform_(self.lora_C, mean=1.0, std=0.02)
+                nn.init.uniform_(self.lora_C, a=0.95, b=1.05)
             elif config.init_weights == "xavier":
                 if self.composition_mode == "add":
                     nn.init.xavier_uniform_(self.lora_A)
@@ -321,9 +321,7 @@ class Linear(LoRALayer, nn.Linear):
                             dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
                             if lora.is_dora:
-                                mxb = (result*mult + delta_w) * lora.scaling 
-                                mxb = mxb / (mxb.norm(p=2, dim=-1, keepdim=True) + 1e-9)
-                                result = mxb * lora.m
+                                result = result * mult + dora * lora.m + lora.scaling
                                 #result = result * gate
                                 return result
                             else:
