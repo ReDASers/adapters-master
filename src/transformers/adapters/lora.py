@@ -79,8 +79,8 @@ class LoRA(nn.Module):
                 #nn.init.ones_(self.gate.weight)
             
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
-            nn.init.ones_(self.m)
-            #nn.init.normal_(self.m, mean=1.0, std=0.02)
+            #nn.init.ones_(self.m)
+            nn.init.normal_(self.m, mean=1.0, std=0.02)
                 
 
             # Initialize weights
