@@ -79,8 +79,8 @@ class LoRA(nn.Module):
                 #nn.init.ones_(self.gate.weight)
             
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
-            #nn.init.ones_(self.m)
-            nn.init.normal_(self.m, mean=1.0, std=0.02)
+            nn.init.ones_(self.m)
+            #nn.init.normal_(self.m, mean=1.0, std=0.02)
                 
 
             # Initialize weights
@@ -499,6 +499,7 @@ class MergedLinear(LoRALayer, nn.Linear):
             return torch.t(w) if self.fan_in_fan_out else w
 
         if not self.merged:
+            raise NotImplementedError()
             adapter_setup = self.get_active_setup(self.loras)
             if adapter_setup is not None:
                 if len(adapter_setup) == 1:
