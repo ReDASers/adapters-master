@@ -56,11 +56,11 @@ class LoRA(nn.Module):
             if self.lora_alpha is None or self.lora_alpha == 0:
                 self.lora_alpha = 1.0
             self.f = nn.Sequential(
-                    nn.Linear(lora_A_shape[1], self.r),
+                    nn.Linear(lora_A_shape[-1], self.r),
                     Activation_Function_Class(config.non_linearity.lower()),
                     nn.Linear(self.r, self.r),
                     Activation_Function_Class(config.non_linearity.lower()),
-                    nn.Linear(self.r, lora_A_shape[1]),
+                    nn.Linear(self.r, lora_A_shape[-1]),
                 )
             if self.composition_mode == "add":
                 self.lora_A = nn.Parameter(torch.randn(lora_A_shape) * std_dev)
@@ -74,8 +74,9 @@ class LoRA(nn.Module):
             nn.init.zeros_(self.lora_B)
             nn.init.ones_(self.lora_C)
             if self.use_gating:
-                self.gate = nn.Linear(lora_A_shape[1], gating_heads)
-               # self.gate.weight.data.normal_(mean=1.0, std=0.02)
+                self.gate = nn.Linear(lora_A_shape[-1], gating_heads)
+                self.gate.weight.data.normal_(mean=0.0, std=0.02)
+                self.gate.bias.data.zero_()
                 #nn.init.ones_(self.gate.weight)
             
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
@@ -307,9 +308,8 @@ class Linear(LoRALayer, nn.Linear):
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     if lora.r > 0:
                         if lora.use_gating:
-                            gate = torch.tanh(lora.gate(x))
+                            gate = torch.sigmoid(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
-                            gate = (gate + 1.0) / 2.0
                             self._store_gating_score(adapter_setup[0], gate)
                         else:
                             gate = 1.0
@@ -324,18 +324,20 @@ class Linear(LoRALayer, nn.Linear):
                             delta_w = delta_w.view(1, 1, -1)
                         else:
                             #fx = lora.lora_alpha * lora.scaling * lora.f(lora.lora_dropout(x))
-                            mult = lora.lora_C.view(1, 1, -1)
-                            fx = lora.f(lora.lora_dropout(x))
-                            #print(x.shape, fx.shape, lora.lora_A.shape, lora.lora_B.shape, mult.shape)
-                            delta_w = lora.scaling * lora.lora_alpha * (fx @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
-                            dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
+                            
                             
                             if lora.is_dora:
+                                mult = lora.lora_C.view(1, 1, -1)
+                                fx = lora.f(lora.lora_dropout(x))
+                                #print(x.shape, fx.shape, lora.lora_A.shape, lora.lora_B.shape, mult.shape)
+                                delta_w = lora.scaling * lora.lora_alpha * (fx @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                                dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                                 # result = result * mult
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
                                     result = result + dora*gate
+                                    # result = (result * mult + dora * lora.m*gate)*lora.scaling
                                 else:
-                                    result = result * mult*gate
+                                    result = result * (mult*gate)
                                 #result = result * gate
                                 return result
                             else:
@@ -343,12 +345,9 @@ class Linear(LoRALayer, nn.Linear):
                                 
                                 #xAB = xA @ torch.t(lora.lora_B)
                                 #fxAB = lora.f(lora.lora_alpha * lora.m * xAB)
-                                if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = (result * mult + dora * lora.m*gate)*lora.scaling
-                                else:
-                                    result = result * mult*gate
+                                delta_w = (lora.lora_alpha/math.sqrt(lora.r)) * (lora.lora_dropout(x) @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                                 #result = result * lora.scaling * gate
-                                return result
+                                return result + delta_w * gate
                         result = lora.com(result, delta_w, gating=gate)
                     return result
                 else:
