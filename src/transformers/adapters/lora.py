@@ -307,8 +307,9 @@ class Linear(LoRALayer, nn.Linear):
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     if lora.r > 0:
                         if lora.use_gating:
-                            gate = torch.tanh(lora.gate(x))+1.0
+                            gate = torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
+                            gate = (gate + 1.0) / 2.0
                             self._store_gating_score(adapter_setup[0], gate)
                         else:
                             gate = 1.0
