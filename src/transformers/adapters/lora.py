@@ -106,7 +106,7 @@ class LoRA(nn.Module):
                 nn.init.ones_(self.lora_C)
             elif config.init_weights == "prexia":
                 nn.init.zeros_(self.lora_B)
-                nn.init.ones_(self.lora_C)
+                nn.init.normal_(self.lora_C, mean=1.0, std=0.02)
             else:
                 raise ValueError(f"Unknown init_weights type: {config.init_weights}")
 
@@ -333,7 +333,7 @@ class Linear(LoRALayer, nn.Linear):
                             if lora.is_dora:
                                 # result = result * mult
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = result + dora 
+                                    result = (result + dora)*lora.m
                                 else:
                                     result = result * mult
                                 #result = result * gate
