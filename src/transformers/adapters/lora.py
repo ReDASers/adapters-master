@@ -309,7 +309,7 @@ class Linear(LoRALayer, nn.Linear):
                         if lora.use_gating:
                             gate = torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
-                            gate = gate + 1.0
+                            gate = (gate + 1.0) / 2.0
                             self._store_gating_score(adapter_setup[0], gate)
                         else:
                             gate = 1.0
@@ -333,22 +333,22 @@ class Linear(LoRALayer, nn.Linear):
                             if lora.is_dora:
                                 # result = result * mult
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = result + dora
+                                    result = result + dora*gate
                                 else:
-                                    result = result * mult
+                                    result = result * mult*gate
                                 #result = result * gate
-                                return result*gate
+                                return result
                             else:
                                 #xA = lora.lora_dropout(x) @ torch.t(lora.lora_A)
                                 
                                 #xAB = xA @ torch.t(lora.lora_B)
                                 #fxAB = lora.f(lora.lora_alpha * lora.m * xAB)
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = (result * mult + dora * lora.m)*lora.scaling
+                                    result = (result * mult + dora * lora.m*gate)*lora.scaling
                                 else:
-                                    result = result * mult
+                                    result = result * mult*gate
                                 #result = result * lora.scaling * gate
-                                return result*gate
+                                return result
                         result = lora.com(result, delta_w, gating=gate)
                     return result
                 else:
