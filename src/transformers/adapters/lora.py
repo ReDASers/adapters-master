@@ -330,9 +330,11 @@ class Linear(LoRALayer, nn.Linear):
                             dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
                             if lora.is_dora:
-                                result = result * mult
+                                # result = result * mult
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = result + dora * lora.m
+                                    result = result + dora 
+                                else:
+                                    result = result * mult
                                 #result = result * gate
                                 return result*gate
                             else:
