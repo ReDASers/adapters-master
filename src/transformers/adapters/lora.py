@@ -75,7 +75,7 @@ class LoRA(nn.Module):
             nn.init.ones_(self.lora_C)
             if self.use_gating:
                 self.gate = nn.Linear(lora_A_shape[1], gating_heads)
-                self.gate.weight.data.normal_(mean=0.0, std=0.02)
+                self.gate.weight.data.normal_(mean=1.0, std=0.02)
                 #nn.init.ones_(self.gate.weight)
             
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
@@ -309,7 +309,7 @@ class Linear(LoRALayer, nn.Linear):
                         if lora.use_gating:
                             gate = torch.tanh(lora.gate(x))
                             gate = torch.mean(gate, dim=1).unsqueeze(-1)
-                            gate = (gate + 1.0) / 1.5
+                            gate = gate + 1.0
                             self._store_gating_score(adapter_setup[0], gate)
                         else:
                             gate = 1.0
@@ -333,7 +333,7 @@ class Linear(LoRALayer, nn.Linear):
                             if lora.is_dora:
                                 # result = result * mult
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = (result + dora)*lora.m
+                                    result = result + dora*lora.m
                                 else:
                                     result = result * mult
                                 #result = result * gate
