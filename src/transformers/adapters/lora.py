@@ -75,6 +75,7 @@ class LoRA(nn.Module):
             nn.init.ones_(self.lora_C)
             if self.use_gating:
                 self.gate = nn.Linear(lora_A_shape[1], gating_heads)
+                self.gate.weight.data.normal_(mean=0.0, std=0.02)
                 #nn.init.ones_(self.gate.weight)
             
             self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
@@ -231,8 +232,9 @@ class Linear(LoRALayer, nn.Linear):
     def reset_adapter(self):
         def T(w):
             return torch.t(w) if self.fan_in_fan_out else w
-
+        
         if self.merged:
+            raise NotImplementedError()
             lora = self.loras[self.merged]
             if lora.r > 0:
                 if lora.composition_mode == "scale":
@@ -257,7 +259,7 @@ class Linear(LoRALayer, nn.Linear):
     def _compute_adapted_weight(self, lora, scaling=None):
         def T(w):
             return torch.t(w) if self.fan_in_fan_out else w
-
+        raise NotImplementedError()
         weight = self.weight
         if lora.r > 0:
             if lora.composition_mode == "scale":
@@ -324,7 +326,7 @@ class Linear(LoRALayer, nn.Linear):
                             mult = lora.lora_C.view(1, 1, -1)
                             fx = lora.f(lora.lora_dropout(x))
                             #print(x.shape, fx.shape, lora.lora_A.shape, lora.lora_B.shape, mult.shape)
-                            delta_w = lora.lora_alpha * (fx @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
+                            delta_w = lora.scaling * lora.lora_alpha * (fx @ torch.t(lora.lora_A) @ torch.t(lora.lora_B))
                             dora = delta_w/ (delta_w.norm(p=2, dim=1, keepdim=True) + 1e-9)
                             
                             if lora.is_dora:
@@ -332,7 +334,7 @@ class Linear(LoRALayer, nn.Linear):
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
                                     result = result + dora * lora.m
                                 #result = result * gate
-                                return result
+                                return result*gate
                             else:
                                 #xA = lora.lora_dropout(x) @ torch.t(lora.lora_A)
                                 
@@ -343,7 +345,7 @@ class Linear(LoRALayer, nn.Linear):
                                 else:
                                     result = result * mult
                                 #result = result * lora.scaling * gate
-                                return result
+                                return result*gate
                         result = lora.com(result, delta_w, gating=gate)
                     return result
                 else:
