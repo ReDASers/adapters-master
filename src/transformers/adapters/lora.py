@@ -344,7 +344,7 @@ class Linear(LoRALayer, nn.Linear):
                                 #xAB = xA @ torch.t(lora.lora_B)
                                 #fxAB = lora.f(lora.lora_alpha * lora.m * xAB)
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = (result * mult + dora * lora.m*gate)*lora.scaling
+                                    result = result * mult + dora *gate*lora.scaling
                                 else:
                                     result = result * mult*gate
                                 #result = result * lora.scaling * gate
