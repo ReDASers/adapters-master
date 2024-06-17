@@ -459,7 +459,7 @@ class MergedLinear(LoRALayer, nn.Linear):
     def _compute_adapted_weight(self, name, lora):
         def T(w):
             return w if self.fan_in_fan_out else torch.t(w)
-
+        raise NotImplementedError()
         weight = self.weight
         if lora.r > 0:
             if lora.composition_mode == "scale":
