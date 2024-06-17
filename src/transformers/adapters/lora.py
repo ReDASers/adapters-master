@@ -78,9 +78,9 @@ class LoRA(nn.Module):
                # self.gate.weight.data.normal_(mean=1.0, std=0.02)
                 #nn.init.ones_(self.gate.weight)
             
-            # self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
+            self.m = nn.Parameter(torch.ones(1, lora_B_shape[0])) 
             #nn.init.ones_(self.m)
-            #nn.init.normal_(self.m, mean=1.0, std=0.02)
+            nn.init.normal_(self.m, mean=1.0, std=0.02)
                 
 
             # Initialize weights
@@ -344,7 +344,7 @@ class Linear(LoRALayer, nn.Linear):
                                 #xAB = xA @ torch.t(lora.lora_B)
                                 #fxAB = lora.f(lora.lora_alpha * lora.m * xAB)
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = result * mult + dora *gate*lora.scaling
+                                    result = (result * mult + dora * lora.m*gate)*lora.scaling
                                 else:
                                     result = result * mult*gate
                                 #result = result * lora.scaling * gate
