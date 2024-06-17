@@ -333,7 +333,7 @@ class Linear(LoRALayer, nn.Linear):
                             if lora.is_dora:
                                 # result = result * mult
                                 if lora.lora_A.shape[1] == lora.lora_B.shape[0]:
-                                    result = result + dora*lora.m
+                                    result = result + dora
                                 else:
                                     result = result * mult
                                 #result = result * gate
